@@ -1,6 +1,7 @@
 local Path = require("luasnip.util.path")
 local uv = vim.uv
 local util = require("luasnip.util.util")
+local log = require("luasnip.util.log").new("tree-watcher")
 
 local M = {}
 
@@ -111,7 +112,7 @@ function M.new(root, depth, callbacks)
 			return
 		end
 		vim.schedule_wrap(function()
-		print("raw: root: " .. root .. "; err: " .. tostring(err) .. "; relpath: " .. relpath .. "; changed: " .. tostring(events.changed) .. "; rename: " .. tostring(events.rename))
+		log.info("raw: root: %s; err: %s; relpath: %s; change: %s; rename: %s", o.root, err, relpath, events.change, events.rename)
 		local full_path = Path.join(root, relpath)
 		local path_stat = uv.fs_stat(full_path)
 
