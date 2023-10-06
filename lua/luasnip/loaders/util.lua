@@ -41,7 +41,7 @@ local function _is_present(v)
 	return v ~= nil
 end
 
-local function normalize_paths(paths, rtp_dirname)
+local function resolve_root_paths(paths, rtp_dirname)
 	if not paths then
 		paths = vim.api.nvim_get_runtime_file(rtp_dirname, true)
 	elseif type(paths) == "string" then
@@ -105,6 +105,25 @@ local function get_ft_paths(root, extension)
 	return ft_path
 end
 
+-- fname must be in the directory-tree below root.
+-- collection_root may not end with a path-separator.
+-- If both are from "realpath", and fname belongs to the collection, this
+-- should be a given.
+local function collection_file_ft(collection_root, fname)
+	local collection_components = Path.components(collection_root)
+	local fname_components = Path.components(fname)
+
+	if #fname_components == #collection_components + 1 then
+		-- if the file is a direct child of the collection-root, get the text
+		-- before the last dot.
+		return fname_components[#collection_components + 1]:match("(.*)%.[^%.]*")
+	else
+		-- if the file is nested deeper, the name of the directory immediately
+		-- below the root is the filetype.
+		return fname_components[#collection_components + 1]
+	end
+end
+
 -- extend table like {lua = {path1}, c = {path1, path2}, ...}, new_paths has the same layout.
 local function extend_ft_paths(paths, new_paths)
 	for ft, path in pairs(new_paths) do
@@ -134,7 +153,7 @@ end
 local function get_load_paths_snipmate_like(opts, rtp_dirname, extension)
 	local collections_load_paths = {}
 
-	for _, path in ipairs(normalize_paths(opts.paths, rtp_dirname)) do
+	for _, path in ipairs(resolve_root_paths(opts.paths, rtp_dirname)) do
 		local collection_ft_paths = get_ft_paths(path, extension)
 
 		local load_paths = vim.deepcopy(collection_ft_paths)
@@ -200,12 +219,13 @@ end
 return {
 	filetypelist_to_set = filetypelist_to_set,
 	split_lines = split_lines,
-	normalize_paths = normalize_paths,
+	resolve_root_paths = resolve_root_paths,
 	ft_filter = ft_filter,
 	get_ft_paths = get_ft_paths,
 	get_load_paths_snipmate_like = get_load_paths_snipmate_like,
 	extend_ft_paths = extend_ft_paths,
 	edit_snippet_files = edit_snippet_files,
 	add_opts = add_opts,
+	collection_file_ft = collection_file_ft,
 	get_load_fts = get_load_fts,
 }

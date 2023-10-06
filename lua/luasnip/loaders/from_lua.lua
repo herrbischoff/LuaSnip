@@ -22,12 +22,14 @@
 -- different lazy_load-calls).
 
 local cache = require("luasnip.loaders._caches").lua
-local path_mod = require("luasnip.util.path")
+local Path = require("luasnip.util.path")
 local loader_util = require("luasnip.loaders.util")
 local ls = require("luasnip")
 local log = require("luasnip.util.log").new("lua-loader")
 local session = require("luasnip.session")
 local util = require("luasnip.util.util")
+local autotable = require("luasnip.util.auto_table").autotable
+local tree_watcher = require("luasnip.loaders.tree_watcher").new
 
 local M = {}
 
@@ -171,84 +173,136 @@ local function _luasnip_load_files(ft, files, add_opts)
 	ls.refresh_notify(ft)
 end
 
-function M._load_lazy_loaded_ft(ft)
-	for _, load_call_paths in ipairs(cache.lazy_load_paths) do
-		_luasnip_load_files(
-			ft,
-			load_call_paths[ft] or {},
-			load_call_paths.add_opts
-		)
-	end
+
+-- map ft->set of files (table where files are keys, and they are either true
+-- or nil, can use pairs to iterate over them).
+local ft_paths = require("luasnip.loaders.data").lua_ft_paths
+
+M.collections = {}
+
+local function lua_package_file_filter(fname)
+	return fname:match("%.lua$")
 end
 
-function M._load_lazy_loaded(bufnr)
-	local fts = loader_util.get_load_fts(bufnr)
+--- Collection watches all files that belong to a collection of snippets below
+--- some root, and registers new files.
+local Collection = {}
+local Collection_mt = {
+	__index = Collection
+}
+function Collection:new(root, lazy, include_ft, exclude_ft, add_opts)
+	local ft_filter = loader_util.ft_filter(include_ft, exclude_ft)
+	local o = setmetatable({
+		root = root,
+		file_filter = function(path)
+			if not path:sub(1, #root) == root then
+				error(("Path `%s` is not a child of root `%s`"):format(path, root))
+			end
+			return lua_package_file_filter(path) and ft_filter(path)
+		end,
+		add_opts = add_opts,
+		lazy = lazy,
+		lazy_files = autotable(2, {warn = false}),
+	}, Collection_mt)
 
-	for _, ft in ipairs(fts) do
-		if not cache.lazy_loaded_ft[ft] then
-			log.info("Loading lazy-load-snippets for filetype `%s`", ft)
-			M._load_lazy_loaded_ft(ft)
-			cache.lazy_loaded_ft[ft] = true
+	-- only register files up to a depth of 2.
+	o.watcher = tree_watcher(root, 2, {
+		-- don't handle removals for now.
+		new_file = function(path)
+			vim.schedule_wrap(function()
+				o:new_file(path)
+			end)()
+		end,
+		changed_file = function(path)
+			vim.schedule_wrap(function()
+				o:reload(path)
+			end)()
 		end
+	})
+
+	return o
+end
+
+-- notify collection about a potential new file.
+function Collection:new_file(path)
+	if not self.file_filter(path) then
+		return
+	end
+
+	local file_ft = loader_util.collection_file_ft(self.root, path)
+
+	ft_paths[file_ft][path] = true
+
+	if self.lazy then
+		if not session.loaded_fts[file_ft] then
+			log.info("Registering lazy-load-snippets for ft `%s` from file `%s`", file_ft, path)
+
+			-- only register to load later.
+			table.insert(self.lazy_files[file_ft], path)
+			return
+		else
+			log.info(
+				"Immediately loading lazy-load-snippets for already-active filetype `%s` from file `%s`",
+				file_ft,
+				path
+			)
+		end
+	end
+
+	_luasnip_load_files(file_ft, {path}, self.add_opts)
+end
+function Collection:do_lazy_load(ft)
+	if session.loaded_fts[ft] then
+		-- skip if already loaded.
+		return
+	end
+
+	log.info("Loading lazy-load-snippets for filetype `%s`", ft)
+	for _, file in ipairs(self.lazy_files) do
+		_luasnip_load_files(ft, {file}, self.add_opts)
+	end
+end
+function Collection:reload(fname)
+	local file_ft = loader_util.collection_file_ft(self.root, fname)
+
+	if self.lazy and not session.loaded_fts[file_ft] then
+		return
+	end
+
+	_luasnip_load_files(file_ft, {fname}, self.add_opts)
+	-- clean snippets if enough were removed.
+	ls.clean_invalidated({ inv_limit = 100 })
+end
+
+function M._load_lazy_loaded_ft(ft)
+	for _, collection in ipairs(M.collections) do
+		collection:do_lazy_load(ft)
 	end
 end
 
 function M.load(opts)
 	opts = opts or {}
 
+	local collection_roots = loader_util.resolve_root_paths(opts.path, "luasnippets")
 	local add_opts = loader_util.add_opts(opts)
 
-	local collections =
-		loader_util.get_load_paths_snipmate_like(opts, "luasnippets", "lua")
-	for _, collection in ipairs(collections) do
-		local load_paths = collection.load_paths
-		log.info("Loading snippet-collection:\n%s", vim.inspect(load_paths))
-
-		-- also add files from collection to cache (collection of all loaded
-		-- files by filetype, useful for editing files for some filetype).
-		loader_util.extend_ft_paths(cache.ft_paths, load_paths)
-
-		for ft, files in pairs(load_paths) do
-			_luasnip_load_files(ft, files, add_opts)
-		end
+	for _, collection_root in ipairs(collection_roots) do
+		table.insert(M.collections, Collection:new(collection_root, false, opts.include, opts.exclude, add_opts))
 	end
 end
 
 function M.lazy_load(opts)
 	opts = opts or {}
 
+	local collection_roots = loader_util.resolve_root_paths(opts.path, "luasnippets")
 	local add_opts = loader_util.add_opts(opts)
 
-	local collections =
-		loader_util.get_load_paths_snipmate_like(opts, "luasnippets", "lua")
-	for _, collection in ipairs(collections) do
-		local load_paths = collection.load_paths
-
-		loader_util.extend_ft_paths(cache.ft_paths, load_paths)
-
-		for ft, files in pairs(load_paths) do
-			if cache.lazy_loaded_ft[ft] then
-				-- instantly load snippets if they were already loaded...
-				log.info(
-					"Immediately loading lazy-load-snippets for already-active filetype `%s` from files:\n%s",
-					ft,
-					vim.inspect(files)
-				)
-				_luasnip_load_files(ft, files, add_opts)
-
-				-- don't load these files again.
-				load_paths[ft] = nil
-			end
-		end
-
-		log.info("Registering lazy-load-snippets:\n%s", vim.inspect(load_paths))
-
-		load_paths.add_opts = add_opts
-		table.insert(cache.lazy_load_paths, load_paths)
+	for _, collection_root in ipairs(collection_roots) do
+		table.insert(M.collections, Collection:new(collection_root, true, opts.include, opts.exclude, add_opts))
 	end
 
 	-- load for current buffer on startup.
-	M._load_lazy_loaded(vim.api.nvim_get_current_buf())
+	M._load_lazy_loaded_ft(vim.api.nvim_get_current_buf())
 end
 
 -- Make sure filename is normalized

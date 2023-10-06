@@ -40,4 +40,6 @@ M.jump_active = false
 
 M.config = nil
 
+M.loaded_fts = {}
+
 return M

@@ -84,23 +84,7 @@ require("luasnip.config")._setup()
 vim.api.nvim_create_augroup("_luasnip_lazy_load", {})
 vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {
 	callback = function()
-		require("luasnip.loaders.from_lua")._load_lazy_loaded(
-			tonumber(vim.fn.expand("<abuf>"))
-		)
-	end,
-	group = "_luasnip_lazy_load",
-})
-vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {
-	callback = function()
-		require("luasnip.loaders.from_snipmate")._load_lazy_loaded(
-			tonumber(vim.fn.expand("<abuf>"))
-		)
-	end,
-	group = "_luasnip_lazy_load",
-})
-vim.api.nvim_create_autocmd({ "BufWinEnter", "FileType" }, {
-	callback = function()
-		require("luasnip.loaders.from_vscode")._load_lazy_loaded(
+		require("luasnip.loaders").load_lazy_loaded(
 			tonumber(vim.fn.expand("<abuf>"))
 		)
 	end,

@@ -128,6 +128,10 @@ function Path.extension(fname)
 	return fname:match("%.([^%.]+)$")
 end
 
+function Path.components(path)
+	return vim.split(path, sep, {plain=true, trimempty=true})
+end
+
 -- returns nil if the file does not exist!
 Path.normalize = uv.fs_realpath
 
