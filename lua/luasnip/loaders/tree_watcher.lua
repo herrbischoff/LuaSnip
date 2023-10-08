@@ -23,6 +23,8 @@ function TreeWatcher:new_file(rel, full)
 		-- already added
 		return
 	end
+
+	log.info("new file %s %s", rel, full)
 	self.files[rel] = true
 	self.callbacks.new_file(full)
 end
@@ -31,6 +33,8 @@ function TreeWatcher:new_dir(rel, full)
 		-- already added
 		return
 	end
+
+	log.info("new dir %s %s", rel, full)
 	-- first do callback for this directory, then look into (and potentially do
 	-- callbacks for) children.
 	self.callbacks.new_dir(full)
@@ -39,14 +43,17 @@ end
 
 function TreeWatcher:change_child(rel, full)
 	if self.dir_watchers[rel] then
+		log.info("changed dir %s %s", rel, full)
 		self.callbacks.change_dir(full)
 	elseif self.files[rel] then
+		log.info("changed file %s %s", rel, full)
 		self.callbacks.change_file(full)
 	end
 end
 
 function TreeWatcher:remove_child(rel, full)
 	if self.dir_watchers[rel] then
+		log.info("removing dir %s %s", rel, full)
 		-- should have been stopped by the watcher for the child, or it was not
 		-- even started due to depth.
 		self.dir_watchers[rel]:remove_root()
@@ -54,6 +61,7 @@ function TreeWatcher:remove_child(rel, full)
 
 		self.callbacks.remove_dir(full)
 	elseif self.files[rel] then
+		log.info("removing file %s %s", rel, full)
 		self.files[rel] = nil
 
 		self.callbacks.remove_file(full)
@@ -65,6 +73,7 @@ function TreeWatcher:remove_root()
 		-- already removed
 		return
 	end
+	log.info("removing root %s", self.root)
 	self.removed = true
 	-- stop own, children should have handled themselves, if they are watched.
 	self.fs_event:stop()
@@ -112,7 +121,7 @@ function M.new(root, depth, callbacks)
 			return
 		end
 		vim.schedule_wrap(function()
-		log.info("raw: root: %s; err: %s; relpath: %s; change: %s; rename: %s", o.root, err, relpath, events.change, events.rename)
+		log.debug("raw: root: %s; err: %s; relpath: %s; change: %s; rename: %s", o.root, err, relpath, events.change, events.rename)
 		local full_path = Path.join(root, relpath)
 		local path_stat = uv.fs_stat(full_path)
 
