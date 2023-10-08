@@ -214,8 +214,10 @@ end
 
 local function get_load_fts(bufnr)
 	local fts = session.config.load_ft_func(bufnr)
+	-- also add "all", loaded by all buffers.
+	table.insert(fts, "all")
 
-	return util.redirect_filetypes(fts)
+	return util.deduplicate(util.redirect_filetypes(fts))
 end
 
 local function add_file_snippets(ft, filename, snippets, autosnippets, add_opts)
