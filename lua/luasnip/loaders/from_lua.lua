@@ -180,7 +180,7 @@ function Collection:new(root, lazy, include_ft, exclude_ft, add_opts)
 				end
 			end)()
 		end,
-		changed_file = function(path)
+		change_file = function(path)
 			vim.schedule_wrap(function()
 				o:reload(path)
 			end)()
@@ -239,13 +239,19 @@ function Collection:do_lazy_load(ft)
 end
 -- will only do something, if the file at `path` is actually in the collection.
 function Collection:reload(path)
-	for ft, _ in pairs(self.path_fts[path]) do
-		if self.lazy and not session.loaded_fts[ft] then
-			return
-		end
-
-		self:add_file_snippets(path, ft)
+	local path_ft = self.path_ft[path]
+	if not path_ft then
+		-- file not in this collection.
+		return
 	end
+
+	if self.lazy and not session.loaded_fts[path_ft] then
+		-- file known, but not yet loaded.
+		return
+	end
+
+	-- will override previously-loaded snippets from this path.
+	self:add_file_snippets(path, path_ft)
 
 	-- clean snippets if enough were removed.
 	ls.clean_invalidated({ inv_limit = 100 })
