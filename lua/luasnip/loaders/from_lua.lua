@@ -257,31 +257,28 @@ function M._load_lazy_loaded_ft(ft)
 	end
 end
 
-function M.load(opts)
+local function _load(lazy, opts)
 	opts = opts or {}
 
-	local collection_roots = loader_util.resolve_root_paths(opts.paths, "luasnippets")
-	log.info("Found roots `%s` for paths `%s`.", vim.inspect(collection_roots), vim.inspect(opts.paths))
-
+	local paths = opts.paths
 	local add_opts = loader_util.make_add_opts(opts)
+	local include = opts.include
+	local exclude = opts.exclude
+
+	local collection_roots = loader_util.resolve_root_paths(opts.paths, "luasnippets")
+	log.info("Found roots `%s` for paths `%s`.", vim.inspect(collection_roots), vim.inspect(paths))
 
 	for _, collection_root in ipairs(collection_roots) do
-		table.insert(M.collections, Collection:new(collection_root, false, opts.include, opts.exclude, add_opts))
+		table.insert(M.collections, Collection:new(collection_root, lazy, include, exclude, add_opts))
 	end
 end
 
+function M.load(opts)
+	_load(false, opts)
+end
+
 function M.lazy_load(opts)
-	opts = opts or {}
-
-	local collection_roots = loader_util.resolve_root_paths(opts.path, "luasnippets")
-	log.info("Found roots `%s` for paths `%s`.", vim.inspect(collection_roots), vim.inspect(opts.paths))
-
-	local add_opts = loader_util.make_add_opts(opts)
-
-	for _, collection_root in ipairs(collection_roots) do
-		table.insert(M.collections, Collection:new(collection_root, true, opts.include, opts.exclude, add_opts))
-	end
-
+	_load(true, opts)
 	-- load for current buffer on startup.
 	M._load_lazy_loaded_ft(vim.api.nvim_get_current_buf())
 end
