@@ -1,6 +1,8 @@
 local Path = require("luasnip.util.path")
 local util = require("luasnip.util.util")
 local session = require("luasnip.session")
+local snippet_collection = require("luasnip.session.snippet_collection")
+local log = require("luasnip.util.log").new("loaders")
 
 local function filetypelist_to_set(list)
 	vim.validate({ list = { list, "table", true } })
@@ -203,7 +205,7 @@ local function edit_snippet_files(ft_files)
 	end)
 end
 
-local function add_opts(opts)
+local function make_add_opts(opts)
 	return {
 		override_priority = opts.override_priority,
 		default_priority = opts.default_priority,
@@ -216,6 +218,28 @@ local function get_load_fts(bufnr)
 	return util.redirect_filetypes(fts)
 end
 
+local function add_file_snippets(ft, filename, snippets, autosnippets, add_opts)
+	snippet_collection.add_snippets({ [ft] = snippets },
+		vim.tbl_extend("keep", {
+			type = "snippets",
+			key = "__snippets__" .. ft .. "__" .. filename,
+		}, add_opts)
+	)
+	snippet_collection.add_snippets({ [ft] = autosnippets },
+		vim.tbl_extend("keep", {
+			type = "autosnippets",
+			key = "__autosnippets__" .. ft .. "__" .. filename,
+		}, add_opts)
+	)
+	log.info(
+		"Adding %s snippets and %s autosnippets from %s to ft `%s`",
+		#snippets,
+		#autosnippets,
+		filename,
+		ft
+	)
+end
+
 return {
 	filetypelist_to_set = filetypelist_to_set,
 	split_lines = split_lines,
@@ -225,7 +249,8 @@ return {
 	get_load_paths_snipmate_like = get_load_paths_snipmate_like,
 	extend_ft_paths = extend_ft_paths,
 	edit_snippet_files = edit_snippet_files,
-	add_opts = add_opts,
+	make_add_opts = make_add_opts,
 	collection_file_ft = collection_file_ft,
 	get_load_fts = get_load_fts,
+	add_file_snippets = add_file_snippets,
 }

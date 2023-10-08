@@ -257,7 +257,7 @@ function M.add_snippets(snippets, opts)
 					or opts.type
 				assert(
 					snip_type == "autosnippets" or snip_type == "snippets",
-					"snippetType must be either 'autosnippets' or 'snippets'"
+					"snippetType must be either 'autosnippets' or 'snippets', was " .. vim.inspect(snip_type)
 				)
 
 				local snip_ft = snip.filetype or ft

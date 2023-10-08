@@ -158,7 +158,7 @@ function M.new(root, depth, callbacks)
 	-- added.
 	-- This difference can be observed, at least on my machine, by watching a
 	-- directory A, and then creating a nested directory B, and children for it
-	-- in one command, ei. `mkdir -p A/B/{1,2,3,4,5,6,7,8,9}`.
+	-- in one command, ie. `mkdir -p A/B/{1,2,3,4,5,6,7,8,9}`.
 	-- If the callback is registered after the scan, the latter directories
 	-- (ie. 4-9) did not show up, whereas everything did work correctly if the
 	-- watcher was activated before the scan.

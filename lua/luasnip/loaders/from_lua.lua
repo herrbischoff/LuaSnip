@@ -22,7 +22,6 @@
 -- different lazy_load-calls).
 
 local cache = require("luasnip.loaders._caches").lua
-local Path = require("luasnip.util.path")
 local loader_util = require("luasnip.loaders.util")
 local ls = require("luasnip")
 local log = require("luasnip.util.log").new("lua-loader")
@@ -46,20 +45,20 @@ local function get_loaded_file_debuginfo()
 	-- ... (here anything is going on, could be 0 stackframes, could be many)
 	-- n-2 (at least 3) is the loaded file
 	-- n-1 (at least 4) is pcall
-	-- n   (at least 5) is _luasnip_load_files
+	-- n   (at least 5) is _luasnip_load_file
 	local current_call_depth = 4
 	local debuginfo
 
 	repeat
 		current_call_depth = current_call_depth + 1
 		debuginfo = debug.getinfo(current_call_depth, "n")
-	until debuginfo.name == "_luasnip_load_files"
+	until debuginfo.name == "_luasnip_load_file"
 
 	-- ret is stored into a local, and not returned immediately to prevent tail
 	-- call optimization, which seems to invalidate the stackframe-numbers
 	-- determined earlier.
 	--
-	-- current_call_depth-0 is _luasnip_load_files,
+	-- current_call_depth-0 is _luasnip_load_file,
 	-- current_call_depth-1 is pcall, and
 	-- current_call_depth-2 is the lua-loaded file.
 	-- "Sl": get only source-file and current line.
@@ -67,116 +66,75 @@ local function get_loaded_file_debuginfo()
 	return ret
 end
 
-local function _luasnip_load_files(ft, files, add_opts)
-	for _, file in ipairs(files) do
+local function _luasnip_load_file(file)
 		-- vim.loader.enabled does not seem to be official api, so always reset
 		-- if the loader is available.
 		-- To be sure, even pcall it, in case there are conditions under which
 		-- it might error.
-		if vim.loader then
-			-- pcall, not sure if this can fail in some way..
-			-- Does not seem like it though
-			local ok, res = pcall(vim.loader.reset, file)
-			if not ok then
-				log.warn("Could not reset cache for file %s\n: %s", file, res)
-			end
+	if vim.loader then
+		-- pcall, not sure if this can fail in some way..
+		-- Does not seem like it though
+		local ok, res = pcall(vim.loader.reset, file)
+		if not ok then
+			log.warn("Could not reset cache for file %s\n: %s", file, res)
 		end
-
-		local func, error_msg = loadfile(file)
-		if error_msg then
-			log.error("Failed to load %s\n: %s", file, error_msg)
-			error(string.format("Failed to load %s\n: %s", file, error_msg))
-		end
-
-		-- the loaded file may add snippets to these tables, they'll be
-		-- combined with the snippets returned regularly.
-		local file_added_snippets = {}
-		local file_added_autosnippets = {}
-
-		-- setup snip_env in func
-		local func_env = vim.tbl_extend(
-			"force",
-			-- extend the current(expected!) globals with the snip_env, and the
-			-- two tables.
-			_G,
-			ls.get_snip_env(),
-			{
-				ls_file_snippets = file_added_snippets,
-				ls_file_autosnippets = file_added_autosnippets,
-			}
-		)
-		-- defaults snip-env requires metatable for resolving
-		-- lazily-initialized keys. If we have to combine this with an eventual
-		-- metatable of _G, look into unifying ls.setup_snip_env and this.
-		setmetatable(func_env, getmetatable(ls.get_snip_env()))
-		setfenv(func, func_env)
-
-		-- Since this function has to reach the snippet-constructor, and fenvs
-		-- aren't inherited by called functions, we have to set it in the global
-		-- environment.
-		_G.__luasnip_get_loaded_file_frame_debuginfo = util.ternary(
-			session.config.loaders_store_source,
-			get_loaded_file_debuginfo,
-			nil
-		)
-		local run_ok, file_snippets, file_autosnippets = pcall(func)
-		-- immediately nil it.
-		_G.__luasnip_get_loaded_file_frame_debuginfo = nil
-
-		if not run_ok then
-			log.error("Failed to execute\n: %s", file, file_snippets)
-			error("Failed to execute " .. file .. "\n: " .. file_snippets)
-		end
-
-		-- make sure these aren't nil.
-		file_snippets = file_snippets or {}
-		file_autosnippets = file_autosnippets or {}
-
-		vim.list_extend(file_snippets, file_added_snippets)
-		vim.list_extend(file_autosnippets, file_added_autosnippets)
-
-		-- keep track of snippet-source.
-		cache.path_snippets[file] = {
-			add_opts = add_opts,
-			ft = ft,
-		}
-
-		ls.add_snippets(
-			ft,
-			file_snippets,
-			vim.tbl_extend("keep", {
-				type = "snippets",
-				key = "__snippets_" .. file,
-				-- prevent refresh here, will be done outside loop.
-				refresh_notify = false,
-			}, add_opts)
-		)
-		ls.add_snippets(
-			ft,
-			file_autosnippets,
-			vim.tbl_extend("keep", {
-				type = "autosnippets",
-				key = "__autosnippets_" .. file,
-				-- prevent refresh here, will be done outside loop.
-				refresh_notify = false,
-			}, add_opts)
-		)
-		log.info(
-			"Adding %s snippets and %s autosnippets from %s to ft `%s`",
-			#file_snippets,
-			#file_autosnippets,
-			file,
-			ft
-		)
 	end
 
-	ls.refresh_notify(ft)
+	local func, error_msg = loadfile(file)
+	if error_msg then
+		log.error("Failed to load %s\n: %s", file, error_msg)
+		error(string.format("Failed to load %s\n: %s", file, error_msg))
+	end
+
+	-- the loaded file may add snippets to these tables, they'll be
+	-- combined with the snippets returned regularly.
+	local file_added_snippets = {}
+	local file_added_autosnippets = {}
+
+	-- setup snip_env in func
+	local func_env = vim.tbl_extend(
+		"force",
+		-- extend the current(expected!) globals with the snip_env, and the
+		-- two tables.
+		_G,
+		ls.get_snip_env(),
+		{
+			ls_file_snippets = file_added_snippets,
+			ls_file_autosnippets = file_added_autosnippets,
+		}
+	)
+	-- defaults snip-env requires metatable for resolving
+	-- lazily-initialized keys. If we have to combine this with an eventual
+	-- metatable of _G, look into unifying ls.setup_snip_env and this.
+	setmetatable(func_env, getmetatable(ls.get_snip_env()))
+	setfenv(func, func_env)
+
+	-- Since this function has to reach the snippet-constructor, and fenvs
+	-- aren't inherited by called functions, we have to set it in the global
+	-- environment.
+	_G.__luasnip_get_loaded_file_frame_debuginfo = util.ternary(
+		session.config.loaders_store_source,
+		get_loaded_file_debuginfo,
+		nil
+	)
+	local run_ok, file_snippets, file_autosnippets = pcall(func)
+	-- immediately nil it.
+	_G.__luasnip_get_loaded_file_frame_debuginfo = nil
+
+	if not run_ok then
+		log.error("Failed to execute\n: %s", file, file_snippets)
+		error("Failed to execute " .. file .. "\n: " .. file_snippets)
+	end
+
+	-- make sure these aren't nil.
+	file_snippets = file_snippets or {}
+	file_autosnippets = file_autosnippets or {}
+
+	vim.list_extend(file_snippets, file_added_snippets)
+	vim.list_extend(file_autosnippets, file_added_autosnippets)
+
+	return file_snippets, file_autosnippets
 end
-
-
--- map ft->set of files (table where files are keys, and they are either true
--- or nil, can use pairs to iterate over them).
-local ft_paths = require("luasnip.loaders.data").lua_ft_paths
 
 M.collections = {}
 
@@ -196,13 +154,19 @@ function Collection:new(root, lazy, include_ft, exclude_ft, add_opts)
 		root = root,
 		file_filter = function(path)
 			if not path:sub(1, #root) == root then
-				error(("Path `%s` is not a child of root `%s`"):format(path, root))
+				log.warn("Tried to filter file `%s`, which is not inside the root `%s`.", path, root)
+				return false
 			end
 			return lua_package_file_filter(path) and ft_filter(path)
 		end,
 		add_opts = add_opts,
 		lazy = lazy,
+		-- store ft -> set of files that should be lazy-loaded.
 		lazy_files = autotable(2, {warn = false}),
+		-- store, for all files in this collection, their filetype.
+		-- No need to always recompute it, and we can use this to store which
+		-- files belong to the collection.
+		path_ft = {}
 	}, Collection_mt)
 
 	-- only register files up to a depth of 2.
@@ -210,7 +174,10 @@ function Collection:new(root, lazy, include_ft, exclude_ft, add_opts)
 		-- don't handle removals for now.
 		new_file = function(path)
 			vim.schedule_wrap(function()
-				o:new_file(path)
+				-- detected new file, make sure it is allowed by our filters.
+				if o.file_filter(path) then
+					o:add_file(path, loader_util.collection_file_ft(o.root, path))
+				end
 			end)()
 		end,
 		changed_file = function(path)
@@ -220,36 +187,44 @@ function Collection:new(root, lazy, include_ft, exclude_ft, add_opts)
 		end
 	})
 
+	log.info("Initialized snippet-collection at `%s`", root)
+
 	return o
 end
 
--- notify collection about a potential new file.
-function Collection:new_file(path)
-	if not self.file_filter(path) then
-		return
-	end
-
-	local file_ft = loader_util.collection_file_ft(self.root, path)
-
-	ft_paths[file_ft][path] = true
+-- Add file with some filetype to collection.
+function Collection:add_file(path, ft)
+	require("luasnip.loaders.data").lua_ft_paths[ft][path] = true
+	self.path_ft[path] = ft
 
 	if self.lazy then
-		if not session.loaded_fts[file_ft] then
-			log.info("Registering lazy-load-snippets for ft `%s` from file `%s`", file_ft, path)
+		if not session.loaded_fts[ft] then
+			log.info("Registering lazy-load-snippets for ft `%s` from file `%s`", ft, path)
 
 			-- only register to load later.
-			table.insert(self.lazy_files[file_ft], path)
+			self.lazy_files[ft][path] = true
 			return
 		else
 			log.info(
-				"Immediately loading lazy-load-snippets for already-active filetype `%s` from file `%s`",
-				file_ft,
-				path
+				"Filetype `%s` is already active, loading immediately.",
+				ft
 			)
 		end
 	end
 
-	_luasnip_load_files(file_ft, {path}, self.add_opts)
+	self:add_file_snippets(path, ft)
+end
+function Collection:add_file_snippets(path, ft)
+	log.info(
+		"Adding snippets for filetype `%s` from file `%s`",
+		ft,
+		path
+	)
+	local snippets, autosnippets = _luasnip_load_file(path)
+
+	loader_util.add_file_snippets(ft, path, snippets, autosnippets, self.add_opts)
+
+	ls.refresh_notify(ft)
 end
 function Collection:do_lazy_load(ft)
 	if session.loaded_fts[ft] then
@@ -258,18 +233,20 @@ function Collection:do_lazy_load(ft)
 	end
 
 	log.info("Loading lazy-load-snippets for filetype `%s`", ft)
-	for _, file in ipairs(self.lazy_files) do
-		_luasnip_load_files(ft, {file}, self.add_opts)
+	for file, _ in pairs(self.lazy_files[ft]) do
+		self:add_file_snippets(file, ft)
 	end
 end
-function Collection:reload(fname)
-	local file_ft = loader_util.collection_file_ft(self.root, fname)
+-- will only do something, if the file at `path` is actually in the collection.
+function Collection:reload(path)
+	for ft, _ in pairs(self.path_fts[path]) do
+		if self.lazy and not session.loaded_fts[ft] then
+			return
+		end
 
-	if self.lazy and not session.loaded_fts[file_ft] then
-		return
+		self:add_file_snippets(path, ft)
 	end
 
-	_luasnip_load_files(file_ft, {fname}, self.add_opts)
 	-- clean snippets if enough were removed.
 	ls.clean_invalidated({ inv_limit = 100 })
 end
@@ -284,7 +261,7 @@ function M.load(opts)
 	opts = opts or {}
 
 	local collection_roots = loader_util.resolve_root_paths(opts.path, "luasnippets")
-	local add_opts = loader_util.add_opts(opts)
+	local add_opts = loader_util.make_add_opts(opts)
 
 	for _, collection_root in ipairs(collection_roots) do
 		table.insert(M.collections, Collection:new(collection_root, false, opts.include, opts.exclude, add_opts))
@@ -295,7 +272,7 @@ function M.lazy_load(opts)
 	opts = opts or {}
 
 	local collection_roots = loader_util.resolve_root_paths(opts.path, "luasnippets")
-	local add_opts = loader_util.add_opts(opts)
+	local add_opts = loader_util.make_add_opts(opts)
 
 	for _, collection_root in ipairs(collection_roots) do
 		table.insert(M.collections, Collection:new(collection_root, true, opts.include, opts.exclude, add_opts))
@@ -303,27 +280,6 @@ function M.lazy_load(opts)
 
 	-- load for current buffer on startup.
 	M._load_lazy_loaded_ft(vim.api.nvim_get_current_buf())
-end
-
--- Make sure filename is normalized
-function M._reload_file(filename)
-	local file_cache = cache.path_snippets[filename]
-	-- only clear and load(!!! snippets may not actually be loaded, lazy_load)
-	-- if the snippets were really loaded.
-	-- normally file_cache should exist if the autocommand was registered, just
-	-- be safe here.
-	if file_cache then
-		local add_opts = file_cache.add_opts
-		local ft = file_cache.ft
-
-		log.info("Re-loading snippets contributed by %s", filename)
-		_luasnip_load_files(ft, { filename }, add_opts)
-		ls.clean_invalidated({ inv_limit = 100 })
-	end
-end
-
-function M.edit_snippet_files()
-	loader_util.edit_snippet_files(cache.ft_paths)
 end
 
 return M
