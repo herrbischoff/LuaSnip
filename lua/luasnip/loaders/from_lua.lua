@@ -260,7 +260,9 @@ end
 function M.load(opts)
 	opts = opts or {}
 
-	local collection_roots = loader_util.resolve_root_paths(opts.path, "luasnippets")
+	local collection_roots = loader_util.resolve_root_paths(opts.paths, "luasnippets")
+	log.info("Found roots `%s` for paths `%s`.", vim.inspect(collection_roots), vim.inspect(opts.paths))
+
 	local add_opts = loader_util.make_add_opts(opts)
 
 	for _, collection_root in ipairs(collection_roots) do
@@ -272,6 +274,8 @@ function M.lazy_load(opts)
 	opts = opts or {}
 
 	local collection_roots = loader_util.resolve_root_paths(opts.path, "luasnippets")
+	log.info("Found roots `%s` for paths `%s`.", vim.inspect(collection_roots), vim.inspect(opts.paths))
+
 	local add_opts = loader_util.make_add_opts(opts)
 
 	for _, collection_root in ipairs(collection_roots) do
