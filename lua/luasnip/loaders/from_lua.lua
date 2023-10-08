@@ -232,7 +232,6 @@ function Collection:do_lazy_load(ft)
 		return
 	end
 
-	log.info("Loading lazy-load-snippets for filetype `%s`", ft)
 	for file, _ in pairs(self.lazy_files[ft]) do
 		self:add_file_snippets(file, ft)
 	end
@@ -258,6 +257,8 @@ function Collection:reload(path)
 end
 
 function M._load_lazy_loaded_ft(ft)
+	log.info("Loading lazy-load-snippets for filetype `%s`", ft)
+
 	for _, collection in ipairs(M.collections) do
 		collection:do_lazy_load(ft)
 	end
