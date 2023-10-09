@@ -57,6 +57,18 @@ local function resolve_root_paths(paths, rtp_dirname)
 	return paths
 end
 
+local function resolve_lazy_root_paths(paths)
+	if type(paths) == "string" then
+		paths = vim.split(paths, ",")
+	end
+
+	paths = vim.tbl_map(Path.expand_nonexisting, paths)
+	paths = vim.tbl_filter(_is_present, paths)
+	paths = util.deduplicate(paths)
+
+	return paths
+end
+
 local function ft_filter(exclude, include)
 	exclude = filetypelist_to_set(exclude)
 	include = filetypelist_to_set(include)
@@ -246,6 +258,7 @@ return {
 	filetypelist_to_set = filetypelist_to_set,
 	split_lines = split_lines,
 	resolve_root_paths = resolve_root_paths,
+	resolve_lazy_root_paths = resolve_lazy_root_paths,
 	ft_filter = ft_filter,
 	get_ft_paths = get_ft_paths,
 	get_load_paths_snipmate_like = get_load_paths_snipmate_like,

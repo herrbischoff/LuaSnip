@@ -148,7 +148,8 @@ local Collection = {}
 local Collection_mt = {
 	__index = Collection
 }
-function Collection:new(root, lazy, include_ft, exclude_ft, add_opts)
+
+function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watcher)
 	local ft_filter = loader_util.ft_filter(include_ft, exclude_ft)
 	local o = setmetatable({
 		root = root,
@@ -170,7 +171,7 @@ function Collection:new(root, lazy, include_ft, exclude_ft, add_opts)
 	}, Collection_mt)
 
 	-- only register files up to a depth of 2.
-	o.watcher = tree_watcher(root, 2, {
+	local watcher_ok, err = pcall(tree_watcher, root, 2, {
 		-- don't handle removals for now.
 		new_file = function(path)
 			vim.schedule_wrap(function()
@@ -185,7 +186,11 @@ function Collection:new(root, lazy, include_ft, exclude_ft, add_opts)
 				o:reload(path)
 			end)()
 		end
-	})
+	}, {lazy = lazy_watcher})
+
+	if not watcher_ok then
+		error(("Could not create watcher: %s"):format(err))
+	end
 
 	log.info("Initialized snippet-collection at `%s`", root)
 
@@ -271,12 +276,24 @@ local function _load(lazy, opts)
 	local add_opts = loader_util.make_add_opts(opts)
 	local include = opts.include
 	local exclude = opts.exclude
+	local lazy_paths = opts.lazy_paths or {}
 
-	local collection_roots = loader_util.resolve_root_paths(opts.paths, "luasnippets")
+	local collection_roots = loader_util.resolve_root_paths(paths, "luasnippets")
+	local lazy_roots = loader_util.resolve_lazy_root_paths(lazy_paths)
+
 	log.info("Found roots `%s` for paths `%s`.", vim.inspect(collection_roots), vim.inspect(paths))
+	log.info("Determined roots `%s` for lazy_paths `%s`.", vim.inspect(lazy_roots), vim.inspect(lazy_paths))
 
-	for _, collection_root in ipairs(collection_roots) do
-		table.insert(M.collections, Collection:new(collection_root, lazy, include, exclude, add_opts))
+	for paths_lazy, roots in pairs({[true] = lazy_roots, [false] = collection_roots}) do
+		for _, collection_root in ipairs(roots) do
+			local ok, coll_or_err = pcall(Collection.new, collection_root, lazy, include, exclude, add_opts, paths_lazy)
+
+			if not ok then
+				log.error("Could not create collection at %s: %s", collection_root, coll_or_err)
+			else
+				table.insert(M.collections, coll_or_err)
+			end
+		end
 	end
 end
 
