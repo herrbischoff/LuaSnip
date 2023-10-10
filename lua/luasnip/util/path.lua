@@ -66,6 +66,27 @@ function Path.expand(filepath)
 	return uv.fs_realpath(expanded)
 end
 
+function Path.expand_nonexisting(filepath)
+	local normalized = filepath
+		-- replace multiple slashes by one.
+		:gsub(sep .. sep .. "+", sep)
+		-- remove trailing slash.
+		:gsub("/$", "")
+
+	normalized
+		-- replace ~ with home-directory.
+		:gsub("^~", vim.env.HOME)
+		-- replace ./ or .\ with config-directory (likely ~/.config/nvim)
+		:gsub("^[.][/\\]", MYCONFIG_ROOT .. sep)
+
+	-- if not yet absolute, prepend path to current directory.
+	if not normalized:match("^[/\\]") then
+		normalized = Path.join(vim.fn.getcwd(), normalized)
+	end
+
+	return normalized
+end
+
 ---Return files and directories in path as a list
 ---@param root string
 ---@return string[] files, string[] directories
@@ -130,6 +151,15 @@ end
 
 function Path.components(path)
 	return vim.split(path, sep, {plain=true, trimempty=true})
+end
+
+function Path.parent(path)
+	local last_component = path:match("%" .. sep .."[^" .. sep .. "]+$")
+	if not last_component then
+		return nil
+	end
+
+	return path:sub(1, #path - #last_component)
 end
 
 -- returns nil if the file does not exist!
