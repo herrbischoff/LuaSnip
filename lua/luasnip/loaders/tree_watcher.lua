@@ -29,7 +29,7 @@ function TreeWatcher:start()
 
 	-- does not work on nfs-drive, at least if it's edited from another
 	-- machine.
-	self.fs_event:start(self.root, {}, function(err, relpath, events)
+	local success, err = self.fs_event:start(self.root, {}, function(err, relpath, events)
 		if self.removed then
 			return
 		end
@@ -68,6 +68,10 @@ function TreeWatcher:start()
 		end
 		end)()
 	end)
+
+	if not success then
+		log.error("Could not start monitor fs-events for path %s due to error %s", self.path, err)
+	end
 
 	-- do initial scan after starting the watcher.
 	-- Scanning first, and then starting the watcher leaves a period of time
