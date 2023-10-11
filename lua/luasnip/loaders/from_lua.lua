@@ -29,6 +29,8 @@ local session = require("luasnip.session")
 local util = require("luasnip.util.util")
 local autotable = require("luasnip.util.auto_table").autotable
 local tree_watcher = require("luasnip.loaders.tree_watcher").new
+local path_watcher = require("luasnip.loaders.path_watcher").new
+local digraph = require("luasnip.util.directed_graph")
 
 local M = {}
 
@@ -66,6 +68,16 @@ local function get_loaded_file_debuginfo()
 	return ret
 end
 
+local function search_lua_rtp(modulename)
+	-- essentially stolen from vim.loader.
+	local rtp_lua_path = package.path
+	for _, path in ipairs(vim.api.nvim_get_runtime_file("", true)) do
+		rtp_lua_path = rtp_lua_path .. (";%s/lua/?.lua;%s/lua/?/init.lua"):format(path, path)
+	end
+
+	return package.searchpath(modulename, rtp_lua_path)
+end
+
 local function _luasnip_load_file(file)
 		-- vim.loader.enabled does not seem to be official api, so always reset
 		-- if the loader is available.
@@ -91,8 +103,22 @@ local function _luasnip_load_file(file)
 	local file_added_snippets = {}
 	local file_added_autosnippets = {}
 
+	local dependent_files = {}
+
 	-- setup snip_env in func
-	local func_env = vim.tbl_extend(
+	local func_env
+	local function ls_tracked_dofile(filename)
+		local package_func, err_msg = loadfile(filename)
+		if package_func then
+			setfenv(package_func, func_env)
+			table.insert(dependent_files, filename)
+		else
+			error(("File %s could not be loaded: %s"):format(filename, err_msg))
+		end
+
+		return package_func()
+	end
+	func_env = vim.tbl_extend(
 		"force",
 		-- extend the current(expected!) globals with the snip_env, and the
 		-- two tables.
@@ -101,6 +127,14 @@ local function _luasnip_load_file(file)
 		{
 			ls_file_snippets = file_added_snippets,
 			ls_file_autosnippets = file_added_autosnippets,
+			ls_tracked_dofile = ls_tracked_dofile,
+			ls_tracked_dopackage = function(package_name)
+				local package_file = search_lua_rtp(package_name)
+				if not package_file then
+					error(("Could not find package %s in rtp/package.path"):format(package_name))
+				end
+				return ls_tracked_dofile(package_file)
+			end
 		}
 	)
 	-- defaults snip-env requires metatable for resolving
@@ -133,7 +167,7 @@ local function _luasnip_load_file(file)
 	vim.list_extend(file_snippets, file_added_snippets)
 	vim.list_extend(file_autosnippets, file_added_autosnippets)
 
-	return file_snippets, file_autosnippets
+	return file_snippets, file_autosnippets, dependent_files
 end
 
 M.collections = {}
@@ -167,7 +201,8 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		-- store, for all files in this collection, their filetype.
 		-- No need to always recompute it, and we can use this to store which
 		-- files belong to the collection.
-		path_ft = {}
+		path_ft = {},
+		file_dependencies = digraph.new_labeled(),
 	}, Collection_mt)
 
 	-- only register files up to a depth of 2.
@@ -217,15 +252,45 @@ function Collection:add_file(path, ft)
 		end
 	end
 
-	self:add_file_snippets(path, ft)
+	self:load_file(path, ft)
 end
-function Collection:add_file_snippets(path, ft)
+function Collection:load_file(path, ft)
 	log.info(
 		"Adding snippets for filetype `%s` from file `%s`",
 		ft,
 		path
 	)
-	local snippets, autosnippets = _luasnip_load_file(path)
+	local snippets, autosnippets, dependent_files = _luasnip_load_file(path)
+
+	-- ignored if it already exists.
+	self.file_dependencies:add_vertex(path)
+	-- make sure we don't retain any old dependencies.
+	self.file_dependencies:clear_incoming_edges(path)
+
+	for module_name, dependent_file in pairs(dependent_files) do
+		-- ignored if it already exists.
+		self.file_dependencies:add_vertex(dependent_file)
+		-- path depends on dependent_file => if dependent_file is changed, path
+		-- should be updated.
+		self.file_dependencies:add_edge(dependent_file, path)
+
+		path_watcher(dependent_file, {
+			change = function(_)
+				-- on change:
+				-- unload module, and reload snippet-file (which should load
+				-- the module anew, as long as it is still required).
+				package[module_name] = nil
+				local depending_files = self.file_dependencies:connected_component(dependent_file)
+				for _, file in ipairs(depending_files) do
+					local file_ft = self.path_ft[file]
+					if file_ft then
+						-- only reload snippet-files.
+						self:load_file(file, file_ft)
+					end
+				end
+			end
+		})
+	end
 
 	loader_util.add_file_snippets(ft, path, snippets, autosnippets, self.add_opts)
 
@@ -238,7 +303,7 @@ function Collection:do_lazy_load(ft)
 	end
 
 	for file, _ in pairs(self.lazy_files[ft]) do
-		self:add_file_snippets(file, ft)
+		self:load_file(file, ft)
 	end
 end
 -- will only do something, if the file at `path` is actually in the collection.
@@ -255,7 +320,7 @@ function Collection:reload(path)
 	end
 
 	-- will override previously-loaded snippets from this path.
-	self:add_file_snippets(path, path_ft)
+	self:load_file(path, path_ft)
 
 	-- clean snippets if enough were removed.
 	ls.clean_invalidated({ inv_limit = 100 })

@@ -1,3 +1,5 @@
+local tbl_util = require("luasnip.util.table")
+
 local DirectedGraph = {}
 
 -- set __index directly in DirectedGraph, otherwise each DirectedGraph-object would have its'
@@ -60,6 +62,13 @@ function DirectedGraph:add_edge(v1, v2)
 	-- link vertices.
 	v1.outgoing_edge_verts[v2] = true
 	v2.incoming_edge_verts[v1] = true
+end
+
+function DirectedGraph:clear_incoming_edges(in_vert)
+	for out_vert, _ in pairs(in_vert.incoming_edge_verts) do
+		out_vert.outgoing_edge_verts[in_vert] = nil
+	end
+	in_vert.incoming_edge_verts = {}
 end
 
 ---Remove edge from v1 to v2
@@ -145,4 +154,70 @@ function DirectedGraph:topological_sort()
 	return sorting
 end
 
-return { new = new_graph }
+-- return all vertices reachable from this one.
+function DirectedGraph:connected_component(vert)
+	local visited = {}
+	local to_visit = {[vert] = true}
+
+	-- get any value in table.
+	local next_vert, _ = next(to_visit, nil)
+	while next_vert do
+		to_visit[next_vert] = nil
+		visited[next_vert] = true
+
+		for neighbor, _ in pairs(next_vert.outgoing_edge_verts) do
+			if not visited[neighbor] then
+				to_visit[neighbor] = true
+			end
+		end
+
+		next_vert, _ = next(to_visit, nil)
+	end
+
+	return tbl_util.set_to_list(visited)
+end
+
+-- Very useful to have a graph where vertices are associated with some label.
+-- This just proxies DirectedGraph and swaps labels and vertices in
+-- parameters/return-values.
+local LabeledDigraph = {}
+LabeledDigraph.__index = LabeledDigraph
+
+local function new_labeled_graph()
+	return setmetatable({
+		graph = new_graph(),
+		label_to_vert = {},
+		vert_to_label = {}
+	}, LabeledDigraph)
+end
+
+function LabeledDigraph:add_vertex(label)
+	if self.label_to_vert[label] then
+		-- don't add same label again.
+		return
+	end
+
+	local vert = self.graph:add_vertex()
+	self.label_to_vert[label] = vert
+	self.vert_to_label[vert] = label
+end
+
+function LabeledDigraph:add_edge(lv1, lv2)
+	-- no edge-labels
+	return self.graph:add_edge(self.label_to_vert[lv1], self.label_to_vert[lv2])
+end
+
+function LabeledDigraph:clear_incoming_edges(lin_vert)
+	self.graph:clear_incoming_edges(self.label_to_vert[lin_vert])
+end
+
+function LabeledDigraph:connected_component(lv)
+	return vim.tbl_map(function(v)
+		return self.vert_to_label[v]
+	end, self.graph:connected_component(self.label_to_vert[lv]))
+end
+
+return {
+	new = new_graph,
+	new_labeled = new_labeled_graph
+}

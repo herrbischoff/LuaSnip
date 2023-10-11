@@ -1,4 +1,3 @@
-local Path = require("luasnip.util.path")
 local uv = vim.uv or vim.loop
 local util = require("luasnip.util.util")
 local log = require("luasnip.util.log").new("path-watcher")
