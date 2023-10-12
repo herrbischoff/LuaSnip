@@ -32,6 +32,8 @@ local tree_watcher = require("luasnip.loaders.tree_watcher").new
 local path_watcher = require("luasnip.loaders.path_watcher").new
 local digraph = require("luasnip.util.directed_graph")
 
+local Data = require("luasnip.loaders.data")
+
 local M = {}
 
 -- ASSUMPTION: this function will only be called inside the snippet-constructor,
@@ -170,8 +172,6 @@ local function _luasnip_load_file(file)
 	return file_snippets, file_autosnippets, dependent_files
 end
 
-M.collections = {}
-
 local function lua_package_file_filter(fname)
 	return fname:match("%.lua$")
 end
@@ -234,7 +234,7 @@ end
 
 -- Add file with some filetype to collection.
 function Collection:add_file(path, ft)
-	require("luasnip.loaders.data").lua_ft_paths[ft][path] = true
+	Data.lua_ft_paths[ft][path] = true
 	self.path_ft[path] = ft
 
 	if self.lazy then
@@ -329,7 +329,7 @@ end
 function M._load_lazy_loaded_ft(ft)
 	log.info("Loading lazy-load-snippets for filetype `%s`", ft)
 
-	for _, collection in ipairs(M.collections) do
+	for _, collection in ipairs(Data.lua_collections) do
 		collection:do_lazy_load(ft)
 	end
 end
@@ -356,7 +356,7 @@ local function _load(lazy, opts)
 			if not ok then
 				log.error("Could not create collection at %s: %s", collection_root, coll_or_err)
 			else
-				table.insert(M.collections, coll_or_err)
+				table.insert(Data.lua_collections, coll_or_err)
 			end
 		end
 	end
