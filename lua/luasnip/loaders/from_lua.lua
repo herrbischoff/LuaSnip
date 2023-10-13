@@ -21,7 +21,6 @@
 -- all files for some ft since add_opts might be different (they might be from
 -- different lazy_load-calls).
 
-local cache = require("luasnip.loaders._caches").lua
 local loader_util = require("luasnip.loaders.util")
 local ls = require("luasnip")
 local log = require("luasnip.util.log").new("lua-loader")
@@ -267,20 +266,16 @@ function Collection:load_file(path, ft)
 	-- make sure we don't retain any old dependencies.
 	self.file_dependencies:clear_incoming_edges(path)
 
-	for module_name, dependent_file in pairs(dependent_files) do
+	for _, file_dependency in ipairs(dependent_files) do
 		-- ignored if it already exists.
-		self.file_dependencies:add_vertex(dependent_file)
+		self.file_dependencies:add_vertex(file_dependency)
 		-- path depends on dependent_file => if dependent_file is changed, path
 		-- should be updated.
-		self.file_dependencies:add_edge(dependent_file, path)
+		self.file_dependencies:add_edge(file_dependency, path)
 
-		path_watcher(dependent_file, {
+		path_watcher(file_dependency, {
 			change = function(_)
-				-- on change:
-				-- unload module, and reload snippet-file (which should load
-				-- the module anew, as long as it is still required).
-				package[module_name] = nil
-				local depending_files = self.file_dependencies:connected_component(dependent_file)
+				local depending_files = self.file_dependencies:connected_component(file_dependency)
 				for _, file in ipairs(depending_files) do
 					local file_ft = self.path_ft[file]
 					if file_ft then
