@@ -206,10 +206,15 @@ function LabeledDigraph:set_vertex(label)
 end
 
 function LabeledDigraph:set_edge(lv1, lv2, edge_label)
+	-- ensure vertices exist.
+	self:set_vertex(lv1)
+	self:set_vertex(lv2)
+
 	if self.verts_to_label[lv1][lv2][edge_label] then
 		-- edge exists, do nothing.
 		return
 	end
+
 	-- determine before setting the lv1-lv2-edge.
 	local other_edge_exists = next(self.verts_to_label[lv1][lv2], nil) ~= nil
 
@@ -242,6 +247,8 @@ function LabeledDigraph:clear_edges(label)
 end
 
 function LabeledDigraph:connected_component(lv, edge_direction)
+	self:set_vertex(lv)
+
 	return vim.tbl_map(function(v)
 		return self.vert_to_label[v]
 	end, self.graph:connected_component(self.label_to_vert[lv], edge_direction))
