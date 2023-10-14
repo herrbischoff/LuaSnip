@@ -200,7 +200,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		-- store, for all files in this collection, their filetype.
 		-- No need to always recompute it, and we can use this to store which
 		-- files belong to the collection.
-		path_ft = {},
+		loaded_path_ft = {},
 		file_dependencies = digraph.new_labeled(),
 	}, Collection_mt)
 
@@ -234,7 +234,6 @@ end
 -- Add file with some filetype to collection.
 function Collection:add_file(path, ft)
 	Data.lua_ft_paths[ft][path] = true
-	self.path_ft[path] = ft
 
 	if self.lazy then
 		if not session.loaded_fts[ft] then
@@ -259,28 +258,42 @@ function Collection:load_file(path, ft)
 		ft,
 		path
 	)
+	self.loaded_path_ft[path] = ft
+
 	local snippets, autosnippets, dependent_files = _luasnip_load_file(path)
 
 	-- ignored if it already exists.
 	self.file_dependencies:add_vertex(path)
 	-- make sure we don't retain any old dependencies.
-	self.file_dependencies:clear_incoming_edges(path)
+	self.file_dependencies:clear_edges(path)
 
 	for _, file_dependency in ipairs(dependent_files) do
 		-- ignored if it already exists.
 		self.file_dependencies:add_vertex(file_dependency)
 		-- path depends on dependent_file => if dependent_file is changed, path
 		-- should be updated.
-		self.file_dependencies:add_edge(file_dependency, path)
+		self.file_dependencies:add_edge(file_dependency, path, path)
 
 		path_watcher(file_dependency, {
 			change = function(_)
 				local depending_files = self.file_dependencies:connected_component(file_dependency)
 				for _, file in ipairs(depending_files) do
-					local file_ft = self.path_ft[file]
-					if file_ft then
-						-- only reload snippet-files.
-						self:load_file(file, file_ft)
+					-- We obviously don't want to load snippet-files that are
+					-- not loaded already.
+					-- However, since we only have dependency-information for
+					-- files that were loaded, this is given if they are one of
+					-- the depending_files and a snippet-file.
+					-- The latter has to be checked here, otherwise we may load
+					-- a utility-file thinking it provides snippets.
+
+					-- Prevent loading one of the utility-files as a snippet-file.
+					-- This will not reject any snippet-file in
+					-- depending_files. This is because since they are in
+					-- depending_files, we have their dependency-information,
+					-- which can only be obtained by loading them, and so there
+					-- can't be any unloaded files in there.
+					if self.loaded_path_ft[file] then
+						self:load_file(file, self.loaded_path_ft[file])
 					end
 				end
 			end
@@ -293,7 +306,7 @@ function Collection:load_file(path, ft)
 end
 function Collection:do_lazy_load(ft)
 	if session.loaded_fts[ft] then
-		-- skip if already loaded.
+		-- ft is already loaded, skip reload.
 		return
 	end
 
@@ -301,16 +314,12 @@ function Collection:do_lazy_load(ft)
 		self:load_file(file, ft)
 	end
 end
--- will only do something, if the file at `path` is actually in the collection.
-function Collection:reload(path)
-	local path_ft = self.path_ft[path]
-	if not path_ft then
-		-- file not in this collection.
-		return
-	end
 
-	if self.lazy and not session.loaded_fts[path_ft] then
-		-- file known, but not yet loaded.
+-- will only do something, if the file at `path` was loaded previously.
+function Collection:reload(path)
+	local path_ft = self.loaded_path_ft[path]
+	if not path_ft then
+		-- file not yet loaded.
 		return
 	end
 
