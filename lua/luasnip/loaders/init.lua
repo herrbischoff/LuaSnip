@@ -61,7 +61,7 @@ function M.edit_snippet_files(opts)
 			for cache_name, ft_file_set in pairs({
 				vscode_packages = {},
 				vscode_standalone = {},
-				snipmate = {},
+				snipmate = loader_data.snipmate_ft_paths[ft],
 				lua = loader_data.lua_ft_paths[ft],
 			}) do
 				for path, _ in pairs(ft_file_set or {}) do
@@ -143,7 +143,6 @@ function M.reload_file(filename)
 		return
 	end
 	require("luasnip.loaders.from_vscode")._reload_file(filename)
-	require("luasnip.loaders.from_snipmate")._reload_file(filename)
 end
 
 function M.load_lazy_loaded(bufnr)

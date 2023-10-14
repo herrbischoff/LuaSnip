@@ -10,6 +10,9 @@ local autotable = require("luasnip.util.auto_table").autotable
 local M = {
 	lua_collections = {},
 	lua_ft_paths = autotable(2),
+
+	snipmate_collections = {},
+	snipmate_ft_paths = autotable(2),
 }
 
 return M
