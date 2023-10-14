@@ -151,7 +151,7 @@ end
 -- return all vertices reachable from this one.
 function DirectedGraph:connected_component(vert, edge_direction)
 	local outgoing_vertices_field =
-		edge_direction == "Invert"
+		edge_direction == "Backward"
 			and "incoming_edge_verts"
 			 or "outgoing_edge_verts"
 

@@ -179,7 +179,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		ft_extensions = digraph.new_labeled(),
 		-- store all files in the collection, by their filetype.
 		-- This information is necessary to handle `extends` even for files
-		-- that are not actually loaded.
+		-- that are not actually loaded (due to in/exclude).
 		collection_files_by_ft = autotable(2, {warn = false}),
 		-- cache snippets without filetype-association for reuse.
 		snipmate_cache = snippetcache.new(load_snipmate)
