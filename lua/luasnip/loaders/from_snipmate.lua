@@ -189,20 +189,18 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 	local watcher_ok, err = pcall(tree_watcher, root, 2, {
 		-- don't handle removals for now.
 		new_file = function(path)
-			vim.schedule_wrap(function()
-				---@as LuaSnip.Loaders.Snipmate.FileCategory
-				local file_category = o.categorize_file(path)
+			---@as LuaSnip.Loaders.Snipmate.FileCategory
+			local file_category = o.categorize_file(path)
 
-				if file_category then
-					-- know it's at least in the collection -> can register it.
-					local file_ft = loader_util.collection_file_ft(o.root, path)
-					o:register_file(path, file_ft)
-					if file_category == "load" then
-						-- actually load if allowed by in/exclude.
-						o:add_file(path, file_ft, "RespectCollection")
-					end
+			if file_category then
+				-- know it's at least in the collection -> can register it.
+				local file_ft = loader_util.collection_file_ft(o.root, path)
+				o:register_file(path, file_ft)
+				if file_category == "load" then
+					-- actually load if allowed by in/exclude.
+					o:add_file(path, file_ft, "RespectCollection")
 				end
-			end)()
+			end
 		end,
 		change_file = function(path)
 			vim.schedule_wrap(function()

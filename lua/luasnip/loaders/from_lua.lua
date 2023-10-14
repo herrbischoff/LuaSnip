@@ -208,17 +208,13 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 	local watcher_ok, err = pcall(tree_watcher, root, 2, {
 		-- don't handle removals for now.
 		new_file = function(path)
-			vim.schedule_wrap(function()
-				-- detected new file, make sure it is allowed by our filters.
-				if o.file_filter(path) then
-					o:add_file(path, loader_util.collection_file_ft(o.root, path))
-				end
-			end)()
+			-- detected new file, make sure it is allowed by our filters.
+			if o.file_filter(path) then
+				o:add_file(path, loader_util.collection_file_ft(o.root, path))
+			end
 		end,
 		change_file = function(path)
-			vim.schedule_wrap(function()
-				o:reload(path)
-			end)()
+			o:reload(path)
 		end
 	}, {lazy = lazy_watcher})
 
