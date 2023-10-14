@@ -149,7 +149,12 @@ function DirectedGraph:topological_sort()
 end
 
 -- return all vertices reachable from this one.
-function DirectedGraph:connected_component(vert)
+function DirectedGraph:connected_component(vert, edge_direction)
+	local outgoing_vertices_field =
+		edge_direction == "Invert"
+			and "incoming_edge_verts"
+			 or "outgoing_edge_verts"
+
 	local visited = {}
 	local to_visit = {[vert] = true}
 
@@ -159,7 +164,7 @@ function DirectedGraph:connected_component(vert)
 		to_visit[next_vert] = nil
 		visited[next_vert] = true
 
-		for neighbor, _ in pairs(next_vert.outgoing_edge_verts) do
+		for neighbor, _ in pairs(next_vert[outgoing_vertices_field]) do
 			if not visited[neighbor] then
 				to_visit[neighbor] = true
 			end
@@ -236,10 +241,10 @@ function LabeledDigraph:clear_edges(label)
 	end
 end
 
-function LabeledDigraph:connected_component(lv)
+function LabeledDigraph:connected_component(lv, edge_direction)
 	return vim.tbl_map(function(v)
 		return self.vert_to_label[v]
-	end, self.graph:connected_component(self.label_to_vert[lv]))
+	end, self.graph:connected_component(self.label_to_vert[lv], edge_direction))
 end
 
 return {

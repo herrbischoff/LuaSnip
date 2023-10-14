@@ -276,7 +276,7 @@ function Collection:load_file(path, ft)
 
 		path_watcher(file_dependency, {
 			change = function(_)
-				local depending_files = self.file_dependencies:connected_component(file_dependency)
+				local depending_files = self.file_dependencies:connected_component(file_dependency, "Forward")
 				for _, file in ipairs(depending_files) do
 					-- We obviously don't want to load snippet-files that are
 					-- not loaded already.
