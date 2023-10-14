@@ -16,11 +16,11 @@ describe("luasnip.util.directed_graph:", function()
 
 					local g = require("luasnip.util.directed_graph").new()
 					for i = 1, v_count do
-						verts[i] = g:add_vertex()
+						verts[i] = g:set_vertex()
 					end
 					for _, edge in ipairs(edges) do
 						-- ] ] to not end string.
-						g:add_edge(verts[edge[1] ], verts[edge[2] ])
+						g:set_edge(verts[edge[1] ], verts[edge[2] ])
 					end
 
 					local sorting = g:topological_sort()

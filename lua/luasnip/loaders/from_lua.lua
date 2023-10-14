@@ -263,16 +263,16 @@ function Collection:load_file(path, ft)
 	local snippets, autosnippets, dependent_files = _luasnip_load_file(path)
 
 	-- ignored if it already exists.
-	self.file_dependencies:add_vertex(path)
+	self.file_dependencies:set_vertex(path)
 	-- make sure we don't retain any old dependencies.
 	self.file_dependencies:clear_edges(path)
 
 	for _, file_dependency in ipairs(dependent_files) do
 		-- ignored if it already exists.
-		self.file_dependencies:add_vertex(file_dependency)
+		self.file_dependencies:set_vertex(file_dependency)
 		-- path depends on dependent_file => if dependent_file is changed, path
 		-- should be updated.
-		self.file_dependencies:add_edge(file_dependency, path, path)
+		self.file_dependencies:set_edge(file_dependency, path, path)
 
 		path_watcher(file_dependency, {
 			change = function(_)
