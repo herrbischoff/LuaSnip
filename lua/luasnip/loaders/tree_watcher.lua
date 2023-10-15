@@ -13,12 +13,28 @@ M.active_watchers = {}
 vim.api.nvim_create_augroup("_luasnip_tree_watcher", {})
 vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 	callback = function(args)
-		for _, watcher in ipairs(M.active_watchers) do
-			watcher:BufWritePost_callback(args.file, Path.normalize(args.file))
+		local realpath = Path.normalize(args.file)
+		if not realpath then
+			-- if nil, the path does not exist for some reason.
+			log.warn("Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.")
+			return
 		end
+
+		for _, watcher in ipairs(M.active_watchers) do
+			watcher:BufWritePost_callback(args.file, realpath)
+		end
+
+		-- remove stopped watchers.
+		-- Doing this during the callback-invocations would incur some more
+		-- complexity since ipairs does not support removal of elements during
+		-- the iteration.
+		M.active_watchers = vim.tbl_filter(function(watcher)
+			return not watcher.stopped
+		end, M.active_watchers)
 	end,
 	group = "_luasnip_tree_watcher",
 })
+
 
 local TreeWatcher = {}
 local TreeWatcher_mt = {
@@ -32,18 +48,14 @@ function TreeWatcher:stop_recursive()
 end
 
 function TreeWatcher:stop()
-	self.fs_event:stop()
+	self.stopped = true
 
-	for i, watcher in ipairs(M.active_watchers) do
-		if watcher == self then
-			table.remove(M.active_watchers[i])
-			return
-		end
-	end
+	self.fs_event:stop()
+	-- will be removed from active_watcher subsequently.
 end
 
 function TreeWatcher:fs_event_callback(err, relpath, events)
-	if self.removed then
+	if self.stopped then
 		return
 	end
 	vim.schedule_wrap(function()
@@ -83,18 +95,17 @@ function TreeWatcher:fs_event_callback(err, relpath, events)
 	end)()
 end
 
--- `path` may be edited through a symlink.
--- realpath may be nil, if the file could not be resolved.
-function TreeWatcher:BufWritePost_callback(path, realpath)
-	-- difficult due to symlinks!!
-	-- Let's only allow symlinking the entire snippet-directory for now.
+-- May not recognize child correctly if there are symlinks on the path from the
+-- child to the directory-root.
+-- Should be fine, especially since, I think, fs_event can recognize those
+-- correctly, which means that this is an issue only very seldomly.
+function TreeWatcher:BufWritePost_callback(realpath)
+	if self.stopped then
+		return
+	end
 
 	local below_root_path
-	if path:sub(1, #self.root) == self.root then
-		-- not a child of this directory.
-		below_root_path = path
-	end
-	if realpath and realpath:sub(1, #self.root) == self.root then
+	if realpath:sub(1, #self.realpath_root) == self.root then
 		-- not a child of this directory.
 		below_root_path = realpath
 	end
@@ -105,12 +116,13 @@ function TreeWatcher:BufWritePost_callback(path, realpath)
 	end
 
 	-- remove root and path-separator between root and following components.
-	local root_relative_components = Path.components(below_root_path:sub(#self.root+2))
+	local root_relative_components = Path.components(below_root_path:sub(#self.realpath_root+2))
 	local rel = root_relative_components[1]
 	if #root_relative_components == 1 then
 		-- wrote file.
 		-- either new, or changed.
 		if self.files[rel] then
+			-- use regular root for notifications!
 			self:change_file(rel, Path.join(self.root, rel))
 		else
 			self:new_file(rel, Path.join(self.root, rel))
@@ -137,7 +149,9 @@ function TreeWatcher:start()
 		return
 	end
 
-	log.info("start monitoring directory %s", self.root)
+	self.stopped = false
+
+	log.info("attempting to start monitoring directory %s", self.root)
 
 	-- does not work on nfs-drive, at least if it's edited from another
 	-- machine.
@@ -145,12 +159,19 @@ function TreeWatcher:start()
 		self:fs_event_callback(err, relpath, events)
 	end)
 
-	-- receive notifications on BufWritePost.
-	table.insert(M.active_watchers, self)
-
 	if not success then
-		log.error("Could not start monitor fs-events for path %s due to error %s", self.path, err)
+		log.error("Could not start fs-events-monitor for path %s due to error %s", self.path, err)
 	end
+
+	-- needed by BufWritePost-callback.
+	self.realpath_root = Path.normalize(self.root)
+	if self.realpath_root then
+		-- receive notifications on BufWritePost.
+		table.insert(M.active_watchers, self)
+	else
+		log.error("Could not resolve realpath for root-path, not enabling BufWritePost-monitor")
+	end
+
 
 	-- do initial scan after starting the watcher.
 	-- Scanning first, and then starting the watcher leaves a period of time
@@ -246,7 +267,7 @@ function TreeWatcher:remove_root()
 	log.debug("removing root %s", self.root)
 	self.removed = true
 	-- stop own, children should have handled themselves, if they are watched.
-	self.fs_event:stop()
+	self:stop()
 
 	-- removing entries (set them to nil) is apparently fine when iterating via
 	-- pairs.
@@ -281,7 +302,14 @@ function M.new(root, depth, callbacks, opts)
 		fs_event = uv.new_fs_event(),
 		files = {},
 		dir_watchers = {},
+		-- removed and stopped are almost the same, but semantically slighly
+		-- different: removed tracks first removal of the root, while stopped
+		-- determines whether new file-events should be registered.
+		--
+		-- removed: have not yet triggered the removed-callback.
 		removed = false,
+		-- start out stopped, start() unsets stopped
+		stopped = true,
 		callbacks = callbacks,
 		depth = depth
 	}, TreeWatcher_mt)
