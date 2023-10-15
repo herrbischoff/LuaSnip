@@ -5,6 +5,21 @@ local log = require("luasnip.util.log").new("tree-watcher")
 
 local M = {}
 
+-- plain list, don't use map-style table since we'll only need direct access to
+-- a watcher when it is stopped, which seldomly happens (at least, compared to
+-- how often it is iterated in the autocmd-callback).
+M.active_watchers = {}
+
+vim.api.nvim_create_augroup("_luasnip_tree_watcher", {})
+vim.api.nvim_create_autocmd({ "BufWritePost" }, {
+	callback = function(args)
+		for _, watcher in ipairs(M.active_watchers) do
+			watcher:BufWritePost_callback(args.file, Path.normalize(args.file))
+		end
+	end,
+	group = "_luasnip_tree_watcher",
+})
+
 local TreeWatcher = {}
 local TreeWatcher_mt = {
 	__index = TreeWatcher
@@ -18,7 +33,104 @@ end
 
 function TreeWatcher:stop()
 	self.fs_event:stop()
+
+	for i, watcher in ipairs(M.active_watchers) do
+		if watcher == self then
+			table.remove(M.active_watchers[i])
+			return
+		end
+	end
 end
+
+function TreeWatcher:fs_event_callback(err, relpath, events)
+	if self.removed then
+		return
+	end
+	vim.schedule_wrap(function()
+	log.debug("raw: self.root: %s; err: %s; relpath: %s; change: %s; rename: %s", self.root, err, relpath, events.change, events.rename)
+	local full_path = Path.join(self.root, relpath)
+	local path_stat = uv.fs_stat(full_path)
+
+	-- try to figure out what happened in the directory.
+	if events.rename then
+		if not uv.fs_stat(self.root) then
+			self:remove_root()
+			return
+		end
+		if not path_stat then
+			self:remove_child(relpath, full_path)
+			return
+		end
+
+		local f_type
+		-- if there is a link to a directory, we are notified on changes!!
+		if path_stat.type == "link" then
+			f_type = uv.fs_stat(uv.fs_realpath(full_path))
+		else
+			f_type = path_stat.type
+		end
+
+		if f_type == "file" then
+			self:new_file(relpath, full_path)
+			return
+		elseif f_type == "directory" then
+			self:new_dir(relpath, full_path)
+			return
+		end
+	elseif events.change then
+		self:change_child(relpath, full_path)
+	end
+	end)()
+end
+
+-- `path` may be edited through a symlink.
+-- realpath may be nil, if the file could not be resolved.
+function TreeWatcher:BufWritePost_callback(path, realpath)
+	-- difficult due to symlinks!!
+	-- Let's only allow symlinking the entire snippet-directory for now.
+
+	local below_root_path
+	if path:sub(1, #self.root) == self.root then
+		-- not a child of this directory.
+		below_root_path = path
+	end
+	if realpath and realpath:sub(1, #self.root) == self.root then
+		-- not a child of this directory.
+		below_root_path = realpath
+	end
+
+	if not below_root_path then
+		-- don't have to notify this tree-watcher.
+		return
+	end
+
+	-- remove root and path-separator between root and following components.
+	local root_relative_components = Path.components(below_root_path:sub(#self.root+2))
+	local rel = root_relative_components[1]
+	if #root_relative_components == 1 then
+		-- wrote file.
+		-- either new, or changed.
+		if self.files[rel] then
+			self:change_file(rel, Path.join(self.root, rel))
+		else
+			self:new_file(rel, Path.join(self.root, rel))
+		end
+	else
+		if self.dir_watchers[rel] then
+			if #root_relative_components == 2 then
+				-- only notify if the changed file is immediately in the
+				-- directory we're watching!
+				-- I think this is the behaviour of fs_event, and logically
+				-- makes sense.
+				self:change_dir(rel, Path.join(self.root, rel))
+			end
+		else
+			-- does nothing if the directory already exists.
+			self:new_dir(rel, Path.join(self.root, rel))
+		end
+	end
+end
+
 function TreeWatcher:start()
 	if self.depth == 0 then
 		-- don't watch children for 0-depth.
@@ -30,44 +142,11 @@ function TreeWatcher:start()
 	-- does not work on nfs-drive, at least if it's edited from another
 	-- machine.
 	local success, err = self.fs_event:start(self.root, {}, function(err, relpath, events)
-		if self.removed then
-			return
-		end
-		vim.schedule_wrap(function()
-		log.debug("raw: self.root: %s; err: %s; relpath: %s; change: %s; rename: %s", self.root, err, relpath, events.change, events.rename)
-		local full_path = Path.join(self.root, relpath)
-		local path_stat = uv.fs_stat(full_path)
-
-		-- try to figure out what happened in the directory.
-		if events.rename then
-			if not uv.fs_stat(self.root) then
-				self:remove_root()
-				return
-			end
-			if not path_stat then
-				self:remove_child(relpath, full_path)
-				return
-			end
-
-			local f_type
-			if path_stat.type == "link" then
-				f_type = uv.fs_stat(uv.fs_realpath(full_path))
-			else
-				f_type = path_stat.type
-			end
-
-			if f_type == "file" then
-				self:new_file(relpath, full_path)
-				return
-			elseif f_type == "directory" then
-				self:new_dir(relpath, full_path)
-				return
-			end
-		elseif events.change then
-			self:change_child(relpath, full_path)
-		end
-		end)()
+		self:fs_event_callback(err, relpath, events)
 	end)
+
+	-- receive notifications on BufWritePost.
+	table.insert(M.active_watchers, self)
 
 	if not success then
 		log.error("Could not start monitor fs-events for path %s due to error %s", self.path, err)
@@ -126,13 +205,19 @@ function TreeWatcher:new_dir(rel, full)
 	self.dir_watchers[rel] = M.new(full, self.depth-1, self.callbacks)
 end
 
+function TreeWatcher:change_file(rel, full)
+	log.debug("changed file %s %s", rel, full)
+	self.callbacks.change_file(full)
+end
+function TreeWatcher:change_dir(rel, full)
+	log.debug("changed dir %s %s", rel, full)
+	self.callbacks.change_dir(full)
+end
 function TreeWatcher:change_child(rel, full)
 	if self.dir_watchers[rel] then
-		log.debug("changed dir %s %s", rel, full)
-		self.callbacks.change_dir(full)
+		self:change_dir(rel, full)
 	elseif self.files[rel] then
-		log.debug("changed file %s %s", rel, full)
-		self.callbacks.change_file(full)
+		self:change_file(rel, full)
 	end
 end
 
