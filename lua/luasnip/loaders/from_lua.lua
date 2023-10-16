@@ -182,7 +182,7 @@ local Collection_mt = {
 	__index = Collection
 }
 
-function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watcher)
+function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watcher, fs_event_providers)
 	local ft_filter = loader_util.ft_filter(include_ft, exclude_ft)
 	local o = setmetatable({
 		root = root,
@@ -202,6 +202,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		-- files belong to the collection.
 		loaded_path_ft = {},
 		file_dependencies = digraph.new_labeled(),
+		fs_event_providers = fs_event_providers
 	}, Collection_mt)
 
 	-- only register files up to a depth of 2.
@@ -216,7 +217,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		change_file = function(path)
 			o:reload(path)
 		end
-	}, {lazy = lazy_watcher})
+	}, {lazy = lazy_watcher, fs_event_providers = fs_event_providers})
 
 	if not watcher_ok then
 		error(("Could not create watcher: %s"):format(err))
@@ -293,7 +294,7 @@ function Collection:load_file(path, ft)
 					end
 				end
 			end
-		})
+		}, {lazy = false, fs_event_providers = self.fs_event_providers})
 	end
 
 	loader_util.add_file_snippets(ft, path, snippets, autosnippets, self.add_opts)
@@ -342,6 +343,7 @@ local function _load(lazy, opts)
 	local include = opts.include
 	local exclude = opts.exclude
 	local lazy_paths = opts.lazy_paths or {}
+	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, uv = false})
 
 	local collection_roots = loader_util.resolve_root_paths(paths, "luasnippets")
 	local lazy_roots = loader_util.resolve_lazy_root_paths(lazy_paths)
@@ -351,7 +353,7 @@ local function _load(lazy, opts)
 
 	for paths_lazy, roots in pairs({[true] = lazy_roots, [false] = collection_roots}) do
 		for _, collection_root in ipairs(roots) do
-			local ok, coll_or_err = pcall(Collection.new, collection_root, lazy, include, exclude, add_opts, paths_lazy)
+			local ok, coll_or_err = pcall(Collection.new, collection_root, lazy, include, exclude, add_opts, paths_lazy, fs_event_providers)
 
 			if not ok then
 				log.error("Could not create collection at %s: %s", collection_root, coll_or_err)
@@ -362,10 +364,14 @@ local function _load(lazy, opts)
 	end
 end
 
+--- Load lua-snippet-collections immediately.
+--- @param opts LuaSnip.Loaders.LoadOpts?
 function M.load(opts)
 	_load(false, opts)
 end
 
+--- Load lua-snippet-collections on demand.
+--- @param opts LuaSnip.Loaders.LoadOpts?
 function M.lazy_load(opts)
 	_load(true, opts)
 	-- load for current buffer on startup.

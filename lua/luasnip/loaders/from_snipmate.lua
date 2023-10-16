@@ -137,7 +137,7 @@ local function snipmate_package_file_filter(fname)
 	return fname:match("%.snippets$")
 end
 
-function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watcher)
+function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watcher, fs_event_providers)
 	local ft_filter = loader_util.ft_filter(include_ft, exclude_ft)
 	local o = setmetatable({
 		root = root,
@@ -182,7 +182,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		-- that are not actually loaded (due to in/exclude).
 		collection_files_by_ft = autotable(2, {warn = false}),
 		-- cache snippets without filetype-association for reuse.
-		snipmate_cache = snippetcache.new(load_snipmate)
+		snipmate_cache = snippetcache.new(load_snipmate),
 	}, Collection_mt)
 
 	-- only register files up to a depth of 2.
@@ -207,7 +207,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 				o:reload(path)
 			end)()
 		end
-	}, {lazy = lazy_watcher})
+	}, {lazy = lazy_watcher, fs_event_providers = fs_event_providers})
 
 	if not watcher_ok then
 		error(("Could not create watcher: %s"):format(err))
@@ -352,6 +352,9 @@ function M._load_lazy_loaded_ft(ft)
 	end
 end
 
+--- Generalized loading of collections.
+--- @param lazy boolean Whether the collection should be loaded lazily.
+--- @param opts LuaSnip.Loaders.LoadOpts?
 local function _load(lazy, opts)
 	opts = opts or {}
 
@@ -360,6 +363,7 @@ local function _load(lazy, opts)
 	local include = opts.include
 	local exclude = opts.exclude
 	local lazy_paths = opts.lazy_paths or {}
+	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, uv = false})
 
 	local collection_roots = loader_util.resolve_root_paths(paths, "snippets")
 	local lazy_roots = loader_util.resolve_lazy_root_paths(lazy_paths)
@@ -369,7 +373,7 @@ local function _load(lazy, opts)
 
 	for paths_lazy, roots in pairs({[true] = lazy_roots, [false] = collection_roots}) do
 		for _, collection_root in ipairs(roots) do
-			local ok, coll_or_err = pcall(Collection.new, collection_root, lazy, include, exclude, add_opts, paths_lazy)
+			local ok, coll_or_err = pcall(Collection.new, collection_root, lazy, include, exclude, add_opts, paths_lazy, fs_event_providers)
 
 			if not ok then
 				log.error("Could not create collection at %s: %s", collection_root, coll_or_err)
@@ -380,15 +384,18 @@ local function _load(lazy, opts)
 	end
 end
 
+--- Load snipmate-snippet-collections immediately.
+--- @param opts LuaSnip.Loaders.LoadOpts?
 function M.load(opts)
 	_load(false, opts)
 end
 
+--- Load snipmate-snippet-collections on demand.
+--- @param opts LuaSnip.Loaders.LoadOpts?
 function M.lazy_load(opts)
 	_load(true, opts)
 	-- load for current buffer on startup.
 	M._load_lazy_loaded_ft(vim.api.nvim_get_current_buf())
 end
-
 
 return M
