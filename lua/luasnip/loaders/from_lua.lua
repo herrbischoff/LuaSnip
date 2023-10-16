@@ -27,8 +27,8 @@ local log = require("luasnip.util.log").new("lua-loader")
 local session = require("luasnip.session")
 local util = require("luasnip.util.util")
 local autotable = require("luasnip.util.auto_table").autotable
-local tree_watcher = require("luasnip.loaders.tree_watcher").new
-local path_watcher = require("luasnip.loaders.path_watcher").new
+local tree_watcher = require("luasnip.loaders.fs_watchers").tree
+local path_watcher = require("luasnip.loaders.fs_watchers").path
 local digraph = require("luasnip.util.directed_graph")
 
 local Data = require("luasnip.loaders.data")

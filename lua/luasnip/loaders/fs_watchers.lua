@@ -1,7 +1,8 @@
 local Path = require("luasnip.util.path")
 local uv = vim.uv or vim.loop
 local util = require("luasnip.util.util")
-local log = require("luasnip.util.log").new("tree-watcher")
+local log_tree = require("luasnip.util.log").new("tree-watcher")
+local log_path = require("luasnip.util.log").new("path-watcher")
 
 local M = {}
 
@@ -16,7 +17,7 @@ vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 		local realpath = Path.normalize(args.file)
 		if not realpath then
 			-- if nil, the path does not exist for some reason.
-			log.warn("Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.")
+			log_tree.warn("Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.")
 			return
 		end
 
@@ -34,7 +35,6 @@ vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 	end,
 	group = "_luasnip_tree_watcher",
 })
-
 
 local TreeWatcher = {}
 local TreeWatcher_mt = {
@@ -59,7 +59,7 @@ function TreeWatcher:fs_event_callback(err, relpath, events)
 		return
 	end
 	vim.schedule_wrap(function()
-	log.debug("raw: self.root: %s; err: %s; relpath: %s; change: %s; rename: %s", self.root, err, relpath, events.change, events.rename)
+	log_tree.debug("raw: self.root: %s; err: %s; relpath: %s; change: %s; rename: %s", self.root, err, relpath, events.change, events.rename)
 	local full_path = Path.join(self.root, relpath)
 	local path_stat = uv.fs_stat(full_path)
 
@@ -151,7 +151,7 @@ function TreeWatcher:start()
 
 	self.stopped = false
 
-	log.info("attempting to start monitoring directory %s", self.root)
+	log_tree.info("attempting to start monitoring directory %s", self.root)
 
 	-- does not work on nfs-drive, at least if it's edited from another
 	-- machine.
@@ -160,7 +160,7 @@ function TreeWatcher:start()
 	end)
 
 	if not success then
-		log.error("Could not start fs-events-monitor for path %s due to error %s", self.path, err)
+		log_tree.error("Could not start fs-events-monitor for path %s due to error %s", self.path, err)
 	end
 
 	-- needed by BufWritePost-callback.
@@ -169,7 +169,7 @@ function TreeWatcher:start()
 		-- receive notifications on BufWritePost.
 		table.insert(M.active_watchers, self)
 	else
-		log.error("Could not resolve realpath for root-path, not enabling BufWritePost-monitor")
+		log_tree.error("Could not resolve realpath for root %s, not enabling BufWritePost-monitor", self.root)
 	end
 
 
@@ -209,7 +209,7 @@ function TreeWatcher:new_file(rel, full)
 		return
 	end
 
-	log.debug("new file %s %s", rel, full)
+	log_tree.debug("new file %s %s", rel, full)
 	self.files[rel] = true
 	self.callbacks.new_file(full)
 end
@@ -219,7 +219,7 @@ function TreeWatcher:new_dir(rel, full)
 		return
 	end
 
-	log.debug("new dir %s %s", rel, full)
+	log_tree.debug("new dir %s %s", rel, full)
 	-- first do callback for this directory, then look into (and potentially do
 	-- callbacks for) children.
 	self.callbacks.new_dir(full)
@@ -227,11 +227,11 @@ function TreeWatcher:new_dir(rel, full)
 end
 
 function TreeWatcher:change_file(rel, full)
-	log.debug("changed file %s %s", rel, full)
+	log_tree.debug("changed file %s %s", rel, full)
 	self.callbacks.change_file(full)
 end
 function TreeWatcher:change_dir(rel, full)
-	log.debug("changed dir %s %s", rel, full)
+	log_tree.debug("changed dir %s %s", rel, full)
 	self.callbacks.change_dir(full)
 end
 function TreeWatcher:change_child(rel, full)
@@ -244,7 +244,7 @@ end
 
 function TreeWatcher:remove_child(rel, full)
 	if self.dir_watchers[rel] then
-		log.debug("removing dir %s %s", rel, full)
+		log_tree.debug("removing dir %s %s", rel, full)
 		-- should have been stopped by the watcher for the child, or it was not
 		-- even started due to depth.
 		self.dir_watchers[rel]:remove_root()
@@ -252,7 +252,7 @@ function TreeWatcher:remove_child(rel, full)
 
 		self.callbacks.remove_dir(full)
 	elseif self.files[rel] then
-		log.debug("removing file %s %s", rel, full)
+		log_tree.debug("removing file %s %s", rel, full)
 		self.files[rel] = nil
 
 		self.callbacks.remove_file(full)
@@ -264,7 +264,7 @@ function TreeWatcher:remove_root()
 		-- already removed
 		return
 	end
-	log.debug("removing root %s", self.root)
+	log_tree.debug("removing root %s", self.root)
 	self.removed = true
 	-- stop own, children should have handled themselves, if they are watched.
 	self:stop()
@@ -287,7 +287,7 @@ local callback_mt = {
 	__index = function() return util.nop end
 }
 -- root needs to be an absolute path.
-function M.new(root, depth, callbacks, opts)
+function M.tree(root, depth, callbacks, opts)
 	opts = opts or {}
 
 	-- if lazy is set, watching a non-existing directory will create a watcher
@@ -324,7 +324,7 @@ function M.new(root, depth, callbacks, opts)
 			error(("Could not find parent-path for %s"):format(root))
 		end
 
-		log.info("Path %s does not exist yet, watching %s for creation.", root, parent_path)
+		log_tree.info("Path %s does not exist yet, watching %s for creation.", root, parent_path)
 
 		local parent_watcher
 		parent_watcher = M.new(parent_path, 1, {
@@ -339,6 +339,128 @@ function M.new(root, depth, callbacks, opts)
 	else
 		o:start()
 	end
+
+	return o
+end
+
+local PathWatcher = {}
+local PathWatcher_mt = {
+	__index = PathWatcher
+}
+
+function PathWatcher:change(full)
+	log_path.info("detected change at path %s", full)
+	if self.removed then
+		-- this is certainly unexpected.
+		log_path.warn("PathWatcher at %s detected change, but path does not exist logically. Not triggering callback.", full)
+	else
+		self.callbacks.change(self.path)
+	end
+end
+function PathWatcher:add()
+	if not self.removed then
+		-- already added
+		return
+	end
+	log_path.info("adding path %s", self.path)
+	self.removed = false
+
+	self.callbacks.add(self.path)
+end
+function PathWatcher:remove()
+	if self.removed then
+		-- already removed
+		return
+	end
+	log_path.debug("removing path %s", self.path)
+	log_path.info("path %s was removed, stopping watcher.", self.path)
+
+	self.removed = true
+
+	self.callbacks.remove(self.path)
+
+	-- Would have to re-register for new file to receive new notifications.
+	self:stop()
+end
+
+function PathWatcher:fs_event_callback(err, relpath, events)
+	if self.stopped then
+		return
+	end
+
+	vim.schedule_wrap(function()
+		log_path.debug("raw: path: %s; err: %s; relpath: %s; change: %s; rename: %s", self.path, err, relpath, events.change, events.rename)
+
+		if events.rename then
+			if not uv.fs_stat(self.path) then
+				self:remove()
+			else
+				self:add()
+			end
+		elseif events.change then
+			self:change()
+		end
+	end)()
+end
+
+function PathWatcher:BufWritePost_callback(realpath)
+	if realpath == self.realpath then
+		-- notify using passed path, not realpath.
+		self:change(self.path)
+	end
+end
+
+function PathWatcher:start()
+	self.stopped = false
+
+	-- does not work on nfs-drive, at least if it's edited from another
+	-- machine.
+	local success, err = self.fs_event:start(self.path, {}, function(err, relpath, events)
+		self:fs_event_callback(err, relpath, events)
+	end)
+
+	if not success then
+		log_path.error("Could not start monitoring fs-events for path %s due to error %s.", self.path, err)
+	end
+
+	self.realpath = Path.normalize(self.path)
+
+	if self.realpath then
+		-- path exists, add file-monitor and notify about adding it.
+		table.insert(M.active_watchers, self)
+
+		self:add()
+		-- no else, never added the path, never call remove.
+	else
+		log_path.error("Could not resolve realpath for path %s, not enabling BufWritePost-monitor", self.path)
+	end
+end
+
+function PathWatcher:stop()
+	self.stopped = true
+	self.fs_event:stop()
+end
+
+function M.path(path, callbacks)
+	local path_stat = uv.fs_stat(path)
+	if not path_stat then
+		return nil
+	end
+
+	-- do nothing on missing callback.
+	callbacks = setmetatable(callbacks or {}, callback_mt)
+
+	local o = setmetatable({
+		path = path,
+		fs_event = uv.new_fs_event(),
+		-- path has to exist for this to work => initialize removed false.
+		removed = false,
+		-- slightly different from removed.
+		stopped = false,
+		callbacks = callbacks,
+	}, PathWatcher_mt)
+
+	o:start()
 
 	return o
 end
