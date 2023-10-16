@@ -6,6 +6,51 @@ local log_path = require("luasnip.util.log").new("path-watcher")
 
 local M = {}
 
+-- used by both watchers.
+local callback_mt = {
+	__index = function() return util.nop end
+}
+
+--- @alias LuaSnip.FSWatcher.FSEventProviders
+--- | '"autocmd"' Hook into BufWritePost to receive notifications on file-changes.
+--- | '"uv"' Register uv.fs_event to receive notifications on file-changes.
+
+--- @alias LuaSnip.FSWatcher.Callback fun(full_path: string)
+
+--- @class LuaSnip.FSWatcher.TreeCallbacks
+--- @field new_file LuaSnip.FSWatcher.Callback?
+--- @field new_dir LuaSnip.FSWatcher.Callback?
+--- @field remove_file LuaSnip.FSWatcher.Callback?
+--- @field remove_dir LuaSnip.FSWatcher.Callback?
+--- @field change_file LuaSnip.FSWatcher.Callback?
+--- @field change_dir LuaSnip.FSWatcher.Callback?
+--- The callbacks are called with the full path to the file/directory that is
+--- affected.
+--- Callbacks that are not set will be replaced by a nop.
+
+--- @class LuaSnip.FSWatcher.PathCallbacks
+--- @field add LuaSnip.FSWatcher.Callback?
+--- @field remove LuaSnip.FSWatcher.Callback?
+--- @field change LuaSnip.FSWatcher.Callback?
+--- The callbacks are called with the full path to the file that path-watcher
+--- is registered on.
+--- Callbacks that are not set will be replaced by a nop.
+
+--- @class LuaSnip.FSWatcher.Options
+--- @field lazy boolean?
+--- If set, the watcher will be initialized even if the root/watched path does
+--- not yet exist, and start notifications once it is created.
+--- @field fs_event_providers table<LuaSnip.FSWatcher.FSEventProviders, boolean>?
+--- Which providers to use for receiving file-changes.
+
+local function get_opts(opts)
+	opts = opts or {}
+	local lazy = vim.F.if_nil(opts.lazy, false)
+	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, uv = false})
+
+	return lazy, fs_event_providers
+end
+
 -- plain list, don't use map-style table since we'll only need direct access to
 -- a watcher when it is stopped, which seldomly happens (at least, compared to
 -- how often it is iterated in the autocmd-callback).
@@ -36,6 +81,17 @@ vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 	group = "_luasnip_tree_watcher",
 })
 
+--- @class LuaSnip.FSWatcher.Tree
+--- @field root string
+--- @field fs_event userdata
+--- @field files table<string, boolean>
+--- @field dir_watchers table<string, LuaSnip.FSWatcher.Tree>
+--- @field removed boolean
+--- @field stopped boolean
+--- @field callbacks LuaSnip.FSWatcher.TreeCallbacks
+--- @field depth number How deep the root should be monitored.
+--- @field fs_event_providers table<LuaSnip.FSWatcher.FSEventProviders, boolean>
+--- @field root_realpath string? Set as soon as the watcher is started.
 local TreeWatcher = {}
 local TreeWatcher_mt = {
 	__index = TreeWatcher
@@ -48,10 +104,12 @@ function TreeWatcher:stop_recursive()
 end
 
 function TreeWatcher:stop()
+	-- don't check which fs_event_providers were actually started, for both of
+	-- these it should not matter if they weren't.
 	self.stopped = true
 
 	self.fs_event:stop()
-	-- will be removed from active_watcher subsequently.
+	-- will be removed from active_watchers subsequently.
 end
 
 function TreeWatcher:fs_event_callback(err, relpath, events)
@@ -153,14 +211,16 @@ function TreeWatcher:start()
 
 	log_tree.info("attempting to start monitoring directory %s", self.root)
 
-	-- does not work on nfs-drive, at least if it's edited from another
-	-- machine.
-	local success, err = self.fs_event:start(self.root, {}, function(err, relpath, events)
-		self:fs_event_callback(err, relpath, events)
-	end)
+	if self.fs_event_providers.uv then
+		-- does not work on nfs-drive, at least if it's edited from another
+		-- machine.
+		local success, err = self.fs_event:start(self.root, {}, function(err, relpath, events)
+			self:fs_event_callback(err, relpath, events)
+		end)
 
-	if not success then
-		log_tree.error("Could not start fs-events-monitor for path %s due to error %s", self.path, err)
+		if not success then
+			log_tree.error("Could not start fs-events-monitor for path %s due to error %s", self.path, err)
+		end
 	end
 
 	-- needed by BufWritePost-callback.
@@ -171,7 +231,6 @@ function TreeWatcher:start()
 	else
 		log_tree.error("Could not resolve realpath for root %s, not enabling BufWritePost-monitor", self.root)
 	end
-
 
 	-- do initial scan after starting the watcher.
 	-- Scanning first, and then starting the watcher leaves a period of time
@@ -223,7 +282,7 @@ function TreeWatcher:new_dir(rel, full)
 	-- first do callback for this directory, then look into (and potentially do
 	-- callbacks for) children.
 	self.callbacks.new_dir(full)
-	self.dir_watchers[rel] = M.new(full, self.depth-1, self.callbacks)
+	self.dir_watchers[rel] = M.tree(full, self.depth-1, self.callbacks)
 end
 
 function TreeWatcher:change_file(rel, full)
@@ -283,16 +342,16 @@ function TreeWatcher:remove_root()
 	self.callbacks.remove_root(self.root)
 end
 
-local callback_mt = {
-	__index = function() return util.nop end
-}
--- root needs to be an absolute path.
+--- Set up new watcher for a tree of files and directories.
+--- @param root string Absolute path to the root.
+--- @param depth number The depth up to which to monitor. 1 means that the
+---                     immediate children will be monitored, 2 includes their
+---                     children, and so on.
+--- @param callbacks LuaSnip.FSWatcher.TreeCallbacks The callbacks to use for this watcher.
+--- @param opts LuaSnip.FSWatcher.Options Options, described in their class.
+--- @return LuaSnip.FSWatcher.Tree
 function M.tree(root, depth, callbacks, opts)
-	opts = opts or {}
-
-	-- if lazy is set, watching a non-existing directory will create a watcher
-	-- for the parent-directory (or its parent, if it does not yet exist).
-	local lazy = vim.F.if_nil(opts.lazy, false)
+	local lazy, fs_event_providers = get_opts(opts)
 
 	-- do nothing on missing callback.
 	callbacks = setmetatable(callbacks or {}, callback_mt)
@@ -311,7 +370,8 @@ function M.tree(root, depth, callbacks, opts)
 		-- start out stopped, start() unsets stopped
 		stopped = true,
 		callbacks = callbacks,
-		depth = depth
+		depth = depth,
+		fs_event_providers = fs_event_providers
 	}, TreeWatcher_mt)
 
 	-- if the path does not yet exist, set watcher up s.t. it will start
@@ -327,7 +387,7 @@ function M.tree(root, depth, callbacks, opts)
 		log_tree.info("Path %s does not exist yet, watching %s for creation.", root, parent_path)
 
 		local parent_watcher
-		parent_watcher = M.new(parent_path, 1, {
+		parent_watcher = M.tree(parent_path, 1, {
 			new_dir = function(full)
 				if full == root then
 					o:start()
@@ -335,7 +395,8 @@ function M.tree(root, depth, callbacks, opts)
 					parent_watcher:stop()
 				end
 			end,
-		}, { lazy = true })
+		-- use same providers.
+		}, { lazy = true, fs_event_providers = fs_event_providers} )
 	else
 		o:start()
 	end
@@ -343,7 +404,16 @@ function M.tree(root, depth, callbacks, opts)
 	return o
 end
 
+--- @class LuaSnip.FSWatcher.Path
+--- @field private path string
+--- @field private fs_event userdata
+--- @field private removed boolean
+--- @field private stopped boolean
+--- @field private callbacks LuaSnip.FSWatcher.TreeCallbacks
+--- @field private fs_event_providers table<LuaSnip.FSWatcher.FSEventProviders, boolean>
+--- @field private realpath string? Set as soon as the watcher is started.
 local PathWatcher = {}
+
 local PathWatcher_mt = {
 	__index = PathWatcher
 }
@@ -357,6 +427,7 @@ function PathWatcher:change(full)
 		self.callbacks.change(self.path)
 	end
 end
+
 function PathWatcher:add()
 	if not self.removed then
 		-- already added
@@ -413,54 +484,99 @@ end
 function PathWatcher:start()
 	self.stopped = false
 
-	-- does not work on nfs-drive, at least if it's edited from another
-	-- machine.
-	local success, err = self.fs_event:start(self.path, {}, function(err, relpath, events)
-		self:fs_event_callback(err, relpath, events)
-	end)
+	if self.fs_event_providers.uv then
+		-- does not work on nfs-drive, at least if it's edited from another
+		-- machine.
+		local success, err = self.fs_event:start(self.path, {}, function(err, relpath, events)
+			self:fs_event_callback(err, relpath, events)
+		end)
 
-	if not success then
-		log_path.error("Could not start monitoring fs-events for path %s due to error %s.", self.path, err)
+		if not success then
+			log_path.error("Could not start monitoring fs-events for path %s due to error %s.", self.path, err)
+		end
 	end
 
-	self.realpath = Path.normalize(self.path)
+	local realpath = Path.normalize(self.path)
 
-	if self.realpath then
-		-- path exists, add file-monitor and notify about adding it.
-		table.insert(M.active_watchers, self)
+	if self.fs_event_providers.autocmd then
+		if realpath then
+			self.realpath = realpath
 
+			-- path exists, add file-monitor.
+			table.insert(M.active_watchers, self)
+		else
+			log_path.error("Could not resolve realpath for path %s, not enabling BufWritePost-monitor", self.path)
+		end
+	end
+
+	if realpath then
+		-- path exists, notify.
 		self:add()
 		-- no else, never added the path, never call remove.
-	else
-		log_path.error("Could not resolve realpath for path %s, not enabling BufWritePost-monitor", self.path)
 	end
 end
 
 function PathWatcher:stop()
+	-- don't check which fs_event_providers were actually started, for both of
+	-- these it should not matter if they weren't.
 	self.stopped = true
 	self.fs_event:stop()
 end
 
-function M.path(path, callbacks)
-	local path_stat = uv.fs_stat(path)
-	if not path_stat then
-		return nil
-	end
+--- Set up new watcher on a single path only.
+--- @param path string Absolute path to the root.
+--- @param callbacks LuaSnip.FSWatcher.PathCallbacks The callbacks to use for this watcher.
+--- @param opts LuaSnip.FSWatcher.Options? Options, described in their class.
+--- @return LuaSnip.FSWatcher.Path
+function M.path(path, callbacks, opts)
+	local lazy, fs_event_providers = get_opts(opts)
 
 	-- do nothing on missing callback.
 	callbacks = setmetatable(callbacks or {}, callback_mt)
 
+	--- @as LuaSnip.FSWatcher.Path
 	local o = setmetatable({
 		path = path,
 		fs_event = uv.new_fs_event(),
-		-- path has to exist for this to work => initialize removed false.
-		removed = false,
+		-- Don't send an initial remove-callback if the path does not yet
+		-- exist.
+		-- Always send add first, or send nothing.
+		removed = true,
 		-- slightly different from removed.
-		stopped = false,
+		-- Set true, since the watcher is initially stopped, and has to be
+		-- manually started, where stopped will be reset.
+		stopped = true,
 		callbacks = callbacks,
+		fs_event_providers = fs_event_providers
 	}, PathWatcher_mt)
 
-	o:start()
+	-- if the path does not yet exist, set watcher up s.t. it will start
+	-- watching when the directory is created.
+	if not uv.fs_stat(path) and lazy then
+		-- root does not yet exist, need to create a watcher that notifies us
+		-- of its creation.
+		local parent_path = Path.parent(path)
+		if not parent_path then
+			error(("Could not find parent-path for %s"):format(path))
+		end
+
+		log_path.info("Path %s does not exist yet, watching %s for creation.", path, parent_path)
+
+		local parent_watcher
+		parent_watcher = M.tree(parent_path, 1, {
+			-- in path_watcher, watch for new file.
+			new_file = function(full)
+				log_path.info("Path: %s %s", full, path)
+				if full == path then
+					o:start()
+					-- directory was created, stop watching.
+					parent_watcher:stop()
+				end
+			end,
+		}, {lazy = true, fs_event_providers = fs_event_providers} )
+	else
+		o:start()
+	end
 
 	return o
 end
