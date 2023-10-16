@@ -17,7 +17,7 @@ vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 		local realpath = Path.normalize(args.file)
 		if not realpath then
 			-- if nil, the path does not exist for some reason.
-			log_tree.warn("Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.")
+			log_tree.info("Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.", args.file)
 			return
 		end
 
