@@ -56,7 +56,7 @@ end
 -- how often it is iterated in the autocmd-callback).
 M.active_watchers = {}
 
-vim.api.nvim_create_augroup("_luasnip_tree_watcher", {})
+vim.api.nvim_create_augroup("_luasnip_fs_watcher", {})
 vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 	callback = function(args)
 		local realpath = Path.normalize(args.file)
@@ -78,7 +78,7 @@ vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 			return not watcher.stopped
 		end, M.active_watchers)
 	end,
-	group = "_luasnip_tree_watcher",
+	group = "_luasnip_fs_watcher",
 })
 
 --- @class LuaSnip.FSWatcher.Tree
@@ -203,8 +203,6 @@ function TreeWatcher:start()
 
 	self.stopped = false
 
-	log_tree.info("attempting to start monitoring directory %s", self.root)
-
 	if self.fs_event_providers.libuv then
 		-- does not work on nfs-drive, at least if it's edited from another
 		-- machine.
@@ -213,7 +211,9 @@ function TreeWatcher:start()
 		end)
 
 		if not success then
-			log_tree.error("Could not start fs-events-monitor for path %s due to error %s", self.path, err)
+			log_tree.error("Could not start libuv-monitor for path %s due to error %s", self.path, err)
+		else
+			log_tree.info("Monitoring root-directory %s with libuv-monitor.", self.root)
 		end
 	end
 
@@ -222,8 +222,9 @@ function TreeWatcher:start()
 	if self.realpath_root then
 		-- receive notifications on BufWritePost.
 		table.insert(M.active_watchers, self)
+		log_tree.info("Monitoring root-directory %s with autocmd-monitor.", self.root)
 	else
-		log_tree.error("Could not resolve realpath for root %s, not enabling BufWritePost-monitor", self.root)
+		log_tree.error("Could not resolve realpath for root %s, not enabling autocmd-monitor", self.root)
 	end
 
 	-- do initial scan after starting the watcher.
@@ -486,7 +487,9 @@ function PathWatcher:start()
 		end)
 
 		if not success then
-			log_path.error("Could not start monitoring fs-events for path %s due to error %s.", self.path, err)
+			log_path.error("Could not start libuv-monitor for file %s due to error %s", self.path, err)
+		else
+			log_path.info("Monitoring file %s with libuv-monitor.", self.path)
 		end
 	end
 
@@ -498,8 +501,9 @@ function PathWatcher:start()
 
 			-- path exists, add file-monitor.
 			table.insert(M.active_watchers, self)
+			log_path.info("Monitoring file %s with autocmd-monitor.", self.path)
 		else
-			log_path.error("Could not resolve realpath for path %s, not enabling BufWritePost-monitor", self.path)
+			log_path.error("Could not resolve realpath for file %s, not enabling BufWritePost-monitor", self.path)
 		end
 	end
 
