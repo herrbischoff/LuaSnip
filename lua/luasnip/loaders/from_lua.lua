@@ -343,7 +343,7 @@ local function _load(lazy, opts)
 	local include = opts.include
 	local exclude = opts.exclude
 	local lazy_paths = opts.lazy_paths or {}
-	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, uv = false})
+	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, libuv = false})
 
 	local collection_roots = loader_util.resolve_root_paths(paths, "luasnippets")
 	local lazy_roots = loader_util.resolve_lazy_root_paths(lazy_paths)

@@ -13,7 +13,7 @@ local callback_mt = {
 
 --- @alias LuaSnip.FSWatcher.FSEventProviders
 --- | '"autocmd"' Hook into BufWritePost to receive notifications on file-changes.
---- | '"uv"' Register uv.fs_event to receive notifications on file-changes.
+--- | '"libuv"' Register uv.fs_event to receive notifications on file-changes.
 
 --- @alias LuaSnip.FSWatcher.Callback fun(full_path: string)
 
@@ -46,7 +46,7 @@ local callback_mt = {
 local function get_opts(opts)
 	opts = opts or {}
 	local lazy = vim.F.if_nil(opts.lazy, false)
-	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, uv = false})
+	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, libuv = false})
 
 	return lazy, fs_event_providers
 end
@@ -211,7 +211,7 @@ function TreeWatcher:start()
 
 	log_tree.info("attempting to start monitoring directory %s", self.root)
 
-	if self.fs_event_providers.uv then
+	if self.fs_event_providers.libuv then
 		-- does not work on nfs-drive, at least if it's edited from another
 		-- machine.
 		local success, err = self.fs_event:start(self.root, {}, function(err, relpath, events)
@@ -484,7 +484,7 @@ end
 function PathWatcher:start()
 	self.stopped = false
 
-	if self.fs_event_providers.uv then
+	if self.fs_event_providers.libuv then
 		-- does not work on nfs-drive, at least if it's edited from another
 		-- machine.
 		local success, err = self.fs_event:start(self.path, {}, function(err, relpath, events)
