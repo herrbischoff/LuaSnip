@@ -3,6 +3,7 @@ local uv = vim.uv or vim.loop
 local util = require("luasnip.util.util")
 local log_tree = require("luasnip.util.log").new("tree-watcher")
 local log_path = require("luasnip.util.log").new("path-watcher")
+local log = require("luasnip.util.log").new("fs-watchers")
 
 local M = {}
 
@@ -59,12 +60,14 @@ M.active_watchers = {}
 vim.api.nvim_create_augroup("_luasnip_fs_watcher", {})
 vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 	callback = function(args)
+		log.debug("Received BufWritePost for file %s.", args.file)
 		local realpath = Path.normalize(args.file)
 		if not realpath then
 			-- if nil, the path does not exist for some reason.
-			log_tree.info("Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.", args.file)
+			log.info("Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.", args.file)
 			return
 		end
+		log.debug("Received update for file %s, using realpath %s.", args.file, realpath)
 
 		for _, watcher in ipairs(M.active_watchers) do
 			watcher:BufWritePost_callback(args.file, realpath)
