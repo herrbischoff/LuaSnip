@@ -70,7 +70,7 @@ vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 		log.debug("Received update for file %s, using realpath %s.", args.file, realpath)
 
 		for _, watcher in ipairs(M.active_watchers) do
-			watcher:BufWritePost_callback(args.file, realpath)
+			watcher:BufWritePost_callback(realpath)
 		end
 
 		-- remove stopped watchers.
