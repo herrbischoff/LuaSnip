@@ -62,6 +62,10 @@ describe("loaders:", function()
 			-- edit snippet-file, and check for reload.
 			feed(edit_keys)
 
+			feed("<Esc>:w<Cr>")
+			exec_lua("vim.wait(100, function() end)")
+			feed("<C-O>ccall1")
+
 			exec_lua("ls.expand()")
 
 			-- undo changes to snippet-file before checking results.
@@ -69,7 +73,7 @@ describe("loaders:", function()
 
 			-- re-enter current placeholder
 			exec_lua("ls.jump(-1)")
-			exec_lua("ls.jump(1)")
+			exec_lua("ls.jump( 1)")
 
 			screen:expect({
 				grid = [[
@@ -379,27 +383,27 @@ describe("loaders:", function()
 		"snipmate-reload works",
 		ls_helpers.loaders["snipmate(rtp)"],
 		"/tests/data/snipmate-snippets/snippets/all.snippets",
-		"<Esc>2jwcereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>2jwcereplaces"
 	)
 
 	reload_test(
 		"vscode-reload works",
 		ls_helpers.loaders["vscode(rtp)"],
 		"/tests/data/vscode-snippets/snippets/all.json",
-		"<Esc>4jwlcereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>4jwlcereplaces"
 	)
 	reload_test(
 		"vscode-standalone-reload works",
 		ls_helpers.loaders["vscode(standalone)"],
 		"/tests/data/vscode-standalone.code-snippets",
-		"<Esc>11jwlcereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>11jwlcereplaces"
 	)
 
 	reload_test(
 		"lua-reload works",
 		ls_helpers.loaders["lua(rtp)"],
 		"/tests/data/lua-snippets/luasnippets/all.lua",
-		"<Esc>jfecereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>jfecereplaces"
 	)
 
 	reload_test(
@@ -414,7 +418,7 @@ describe("loaders:", function()
 			)
 		end,
 		"/tests/data/snipmate-snippets/snippets/all.snippets",
-		"<Esc>2jwcereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>2jwcereplaces"
 	)
 
 	reload_test(
@@ -429,7 +433,7 @@ describe("loaders:", function()
 			)
 		end,
 		"/tests/data/vscode-snippets/snippets/all.json",
-		"<Esc>4jwlcereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>4jwlcereplaces"
 	)
 
 	reload_test(
@@ -444,7 +448,7 @@ describe("loaders:", function()
 			)
 		end,
 		"/tests/data/lua-snippets/luasnippets/all.lua",
-		"<Esc>jfecereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>jfecereplaces"
 	)
 
 	reload_test(
@@ -459,7 +463,7 @@ describe("loaders:", function()
 			)
 		end,
 		"/tests/symlinked_data/snipmate-snippets/snippets/all.snippets",
-		"<Esc>2jwcereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>2jwcereplaces"
 	)
 
 	reload_test(
@@ -473,7 +477,7 @@ describe("loaders:", function()
 			)
 		end,
 		"/tests/symlinked_data/vscode-snippets/snippets/all.json",
-		"<Esc>4jwlcereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>4jwlcereplaces"
 	)
 
 	reload_test(
@@ -488,7 +492,7 @@ describe("loaders:", function()
 			)
 		end,
 		"/tests/symlinked_data/lua-snippets/luasnippets/all.lua",
-		"<Esc>jfecereplaces<Esc>:w<Cr><C-O>ccall1"
+		"<Esc>jfecereplaces"
 	)
 
 	it("Can load files with `code-snippets`-extension.", function()
