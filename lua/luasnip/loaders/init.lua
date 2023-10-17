@@ -149,10 +149,11 @@ function M.load_lazy_loaded(bufnr)
 	local fts = loader_util.get_load_fts(bufnr)
 
 	for _, ft in ipairs(fts) do
-		require("luasnip.loaders.from_lua")._load_lazy_loaded_ft(ft)
-		require("luasnip.loaders.from_snipmate")._load_lazy_loaded_ft(ft)
-		require("luasnip.loaders.from_vscode")._load_lazy_loaded_ft(ft)
-
+		if not session.loaded_fts[ft] then
+			require("luasnip.loaders.from_lua")._load_lazy_loaded_ft(ft)
+			require("luasnip.loaders.from_snipmate")._load_lazy_loaded_ft(ft)
+			require("luasnip.loaders.from_vscode")._load_lazy_loaded_ft(ft)
+		end
 		session.loaded_fts[ft] = true
 	end
 end

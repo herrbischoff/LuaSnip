@@ -302,11 +302,6 @@ function Collection:load_file(path, ft)
 	ls.refresh_notify(ft)
 end
 function Collection:do_lazy_load(ft)
-	if session.loaded_fts[ft] then
-		-- ft is already loaded, skip reload.
-		return
-	end
-
 	for file, _ in pairs(self.lazy_files[ft]) do
 		self:load_file(file, ft)
 	end
