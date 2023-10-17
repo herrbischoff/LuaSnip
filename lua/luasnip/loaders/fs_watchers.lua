@@ -162,19 +162,13 @@ function TreeWatcher:BufWritePost_callback(realpath)
 		return
 	end
 
-	local below_root_path
-	if realpath:sub(1, #self.realpath_root) == self.root then
-		-- not a child of this directory.
-		below_root_path = realpath
-	end
-
-	if not below_root_path then
-		-- don't have to notify this tree-watcher.
+	if realpath:sub(1, #self.realpath_root) ~= self.realpath_root then
+		-- not inside this root.
 		return
 	end
 
-	-- remove root and path-separator between root and following components.
-	local root_relative_components = Path.components(below_root_path:sub(#self.realpath_root+2))
+	-- `#self.realpath_root+2`: remove root and path-separator.
+	local root_relative_components = Path.components(realpath:sub(#self.realpath_root+2))
 	local rel = root_relative_components[1]
 	if #root_relative_components == 1 then
 		-- wrote file.
