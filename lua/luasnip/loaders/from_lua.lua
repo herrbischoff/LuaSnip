@@ -303,7 +303,9 @@ function Collection:load_file(path, ft)
 end
 function Collection:do_lazy_load(ft)
 	for file, _ in pairs(self.lazy_files[ft]) do
-		self:load_file(file, ft)
+		if not self.loaded_path_ft[file] then
+			self:load_file(file, ft)
+		end
 	end
 end
 
