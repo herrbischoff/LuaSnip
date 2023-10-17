@@ -369,8 +369,11 @@ end
 --- @param opts LuaSnip.Loaders.LoadOpts?
 function M.lazy_load(opts)
 	_load(true, opts)
+
 	-- load for current buffer on startup.
-	M._load_lazy_loaded_ft(vim.api.nvim_get_current_buf())
+	for _, ft in ipairs(loader_util.get_load_fts(vim.api.nvim_get_current_buf())) do
+		M._load_lazy_loaded_ft(ft)
+	end
 end
 
 return M
