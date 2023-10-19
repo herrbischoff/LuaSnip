@@ -349,9 +349,7 @@ end
 
 function Collection:do_lazy_load(ft)
 	for file, _ in pairs(self.lazy_files[ft]) do
-		if not self.loaded_path_ft[file] then
-			self:load_file(file, ft)
-		end
+		self:load_file(file, ft)
 	end
 end
 
