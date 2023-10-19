@@ -126,6 +126,9 @@ local function load_snipmate(filename)
 	}
 end
 
+-- cache snippets without filetype-association for reuse.
+Data.snipmate_cache = snippetcache.new(load_snipmate)
+
 --- Collection watches all files that belong to a collection of snippets below
 --- some root, and registers new files.
 local Collection = {}
@@ -181,8 +184,6 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		-- This information is necessary to handle `extends` even for files
 		-- that are not actually loaded (due to in/exclude).
 		collection_files_by_ft = autotable(2, {warn = false}),
-		-- cache snippets without filetype-association for reuse.
-		snipmate_cache = snippetcache.new(load_snipmate),
 	}, Collection_mt)
 
 	-- only register files up to a depth of 2.
@@ -285,9 +286,11 @@ function Collection:load_file(path, ft, skip_load_mode)
 
 	-- this may already be set, but setting again here ensures that all
 	-- loaded files are accessible.
+	-- (for example, file-ft-combinations loaded as a dependency from another
+	-- file may not be set already).
 	Data.snipmate_ft_paths[ft][path] = true
 
-	local data = self.snipmate_cache:fetch(path)
+	local data = Data.snipmate_cache:fetch(path)
 	local snippets = data.snippets
 	local autosnippets = data.autosnippets
 	local extended_fts = util.deduplicate(data.misc)

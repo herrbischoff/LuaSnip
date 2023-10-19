@@ -13,6 +13,8 @@ local M = {
 
 	snipmate_collections = {},
 	snipmate_ft_paths = autotable(2),
+	-- set by loader.
+	snipmate_cache = nil,
 }
 
 return M
