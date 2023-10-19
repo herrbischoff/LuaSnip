@@ -481,41 +481,37 @@ function M.lazy_load(opts)
 	end
 end
 
-local function standalone_add(path, add_opts)
-	local file_snippets = get_file_snippets(path)
-
-	ls.add_snippets(
-		-- nil: provided snippets are a table mapping filetype->snippets.
-		"all",
-		file_snippets,
-		vim.tbl_extend("keep", {
-			key = string.format("__snippets_%s", path),
-		}, add_opts)
-	)
-end
-
 function M.load_standalone(opts)
 	opts = opts or {}
-	local path = Path.expand(opts.path)
-	local add_opts = loader_util.add_opts(opts)
 
-	-- register file for `all`-filetype in cache.
-	if not standalone_cache.ft_paths.all then
-		standalone_cache.ft_paths.all = {}
+	local lazy = vim.F.if_nil(opts.lazy, false)
+	local add_opts = loader_util.make_add_opts(opts)
+	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, libuv = false})
+
+	local path
+	if not lazy then
+		path = Path.expand(opts.path)
+		if not path then
+			log.error("Expanding path %s does not produce an existing path.", opts.path)
+			return
+		end
+	else
+		path = Path.expand_maybe_nonexisting(opts.path)
 	end
 
-	-- record in cache, so edit_snippet_files can find it.
-	-- Store under "all" for now, alternative: collect all filetypes the
-	-- snippets contribute to.
-	-- Since .code-snippets are mainly (?) project-local, that behaviour does
-	-- not seem to bad.
-	table.insert(standalone_cache.ft_paths.all, path)
+	Data.vscode_ft_paths["all"][path] = true
 
-	-- only store add_opts, we don't need to remember filetypes and the like,
-	-- and here the filename is enough to identify add_opts.
-	standalone_cache.path_snippets[path] = add_opts
+	local ok, watcher_or_err = pcall(SnippetfileWatcher.new, path, "all", fs_event_providers, lazy, function()
+		local data = Data.vscode_cache:fetch(path)
+		-- autosnippets are included in snippets for this loader.
+		local snippets = data.snippets
+		loader_util.add_file_snippets("all", path, snippets, {}, add_opts)
+	end)
 
-	standalone_add(path, add_opts)
+	if not ok then
+		log.error("Could not create SnippetFileWatcher for path %s: %s", path, watcher_or_err)
+		return
+	end
 end
 
 return M

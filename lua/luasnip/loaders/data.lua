@@ -18,7 +18,6 @@ local M = {
 	snipmate_cache = nil,
 
 	vscode_package_collections = {},
-	vscode_standalone_collections = {},
 	vscode_ft_paths = autotable(2),
 	-- set by loader.
 	vscode_cache = nil,
