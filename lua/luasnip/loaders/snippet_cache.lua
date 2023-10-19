@@ -12,11 +12,11 @@ local duplicate = require("luasnip.nodes.duplicate")
 --- mtime is nil if the file does not currently exist. Since `get_fn` may still
 --- return data, there's no need to treat this differently.
 
---- @class LuaSnip.Loaders.FileCache
---- FileCache stores snippets and other data loaded by files.
+
+--- @class LuaSnip.Loaders.SnippetCache
+--- SnippetCache stores snippets and other data loaded by files.
 --- @field private get_fn fun(file: string): LuaSnip.Loaders.SnippetFileData
 --- @field private cache table<string, LuaSnip.Loaders.SnippetCache.TimeCacheEntry>
-
 local SnippetCache = {}
 SnippetCache.__index = SnippetCache
 
@@ -29,7 +29,7 @@ local M = {}
 
 --- Create new cache.
 --- @param get_fn fun(file: string): LuaSnip.Loaders.SnippetFileData
---- @return LuaSnip.Loaders.FileCache
+--- @return LuaSnip.Loaders.SnippetCache
 function M.new(get_fn)
 	return setmetatable({
 		get_fn = get_fn,
