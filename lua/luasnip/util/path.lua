@@ -14,6 +14,10 @@ local sep = (function()
 	return package.config:sub(1, 1)
 end)()
 
+local root_pattern = (function()
+	return uv.os_uname().sysname:find("Windows") and "%w%:" or "%/"
+end)()
+
 function Path.join(...)
 	return table.concat({ ... }, sep)
 end
@@ -66,25 +70,53 @@ function Path.expand(filepath)
 	return uv.fs_realpath(expanded)
 end
 
-function Path.expand_nonexisting(filepath)
+-- do our best at normalizing a non-existing path.
+function Path.normalize_nonexisting(filepath, cwd)
+	cwd = cwd or vim.fn.getcwd()
+
 	local normalized = filepath
 		-- replace multiple slashes by one.
 		:gsub(sep .. sep .. "+", sep)
 		-- remove trailing slash.
-		:gsub("/$", "")
+		:gsub(sep .. "$", "")
+		-- remove ./ from path.
+		:gsub("%." .. sep, "")
 
-	normalized
+	-- if not yet absolute, prepend path to current directory.
+	if not normalized:match("^" .. root_pattern .. "") then
+		normalized = Path.join(cwd, normalized)
+	end
+
+	return normalized
+end
+
+function Path.expand_nonexisting(filepath, cwd)
+	filepath
 		-- replace ~ with home-directory.
 		:gsub("^~", vim.env.HOME)
 		-- replace ./ or .\ with config-directory (likely ~/.config/nvim)
 		:gsub("^[.][/\\]", MYCONFIG_ROOT .. sep)
 
-	-- if not yet absolute, prepend path to current directory.
-	if not normalized:match("^[/\\]") then
-		normalized = Path.join(vim.fn.getcwd(), normalized)
-	end
+	return Path.normalize_nonexisting(filepath, cwd)
+end
 
-	return normalized
+-- do our best at expanding a path that may or may not exist (ie. check if it
+-- exists, if so do regular expand, and guess expanded path otherwise)
+-- Not the clearest name :/
+function Path.expand_maybe_nonexisting(filepath, cwd)
+	local real_expanded = Path.expand(filepath)
+	if not real_expanded then
+		real_expanded = Path.expand_nonexisting(filepath, cwd)
+	end
+	return real_expanded
+end
+
+function Path.normalize_maybe_nonexisting(filepath, cwd)
+	local real_normalized = Path.normalize(filepath)
+	if not real_normalized then
+		real_normalized = Path.normalize_nonexisting(filepath, cwd)
+	end
+	return real_normalized
 end
 
 ---Return files and directories in path as a list

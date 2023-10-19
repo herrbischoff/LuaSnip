@@ -39,7 +39,7 @@ local function split_lines(filestring)
 	)
 end
 
-local function _is_present(v)
+local function non_nil(v)
 	return v ~= nil
 end
 
@@ -51,7 +51,7 @@ local function resolve_root_paths(paths, rtp_dirname)
 	end
 
 	paths = vim.tbl_map(Path.expand, paths)
-	paths = vim.tbl_filter(_is_present, paths)
+	paths = vim.tbl_filter(non_nil, paths)
 	paths = util.deduplicate(paths)
 
 	return paths
@@ -62,8 +62,8 @@ local function resolve_lazy_root_paths(paths)
 		paths = vim.split(paths, ",")
 	end
 
-	paths = vim.tbl_map(Path.expand_nonexisting, paths)
-	paths = vim.tbl_filter(_is_present, paths)
+	paths = vim.tbl_map(Path.expand_maybe_nonexisting, paths)
+	paths = vim.tbl_filter(non_nil, paths)
 	paths = util.deduplicate(paths)
 
 	return paths
