@@ -30,6 +30,8 @@ local autotable = require("luasnip.util.auto_table").autotable
 local tree_watcher = require("luasnip.loaders.fs_watchers").tree
 local path_watcher = require("luasnip.loaders.fs_watchers").path
 local digraph = require("luasnip.util.directed_graph")
+local refresh_notify = require("luasnip.loaders.enqueueable_operations").refresh_notify
+local clean_invalidated = require("luasnip.loaders.enqueueable_operations").clean_invalidated
 
 local Data = require("luasnip.loaders.data")
 
@@ -299,7 +301,7 @@ function Collection:load_file(path, ft)
 
 	loader_util.add_file_snippets(ft, path, snippets, autosnippets, self.add_opts)
 
-	ls.refresh_notify(ft)
+	refresh_notify(ft)
 end
 function Collection:do_lazy_load(ft)
 	for file, _ in pairs(self.lazy_files[ft]) do
@@ -321,7 +323,7 @@ function Collection:reload(path)
 	self:load_file(path, path_ft)
 
 	-- clean snippets if enough were removed.
-	ls.clean_invalidated({ inv_limit = 100 })
+	clean_invalidated()
 end
 
 function M._load_lazy_loaded_ft(ft)

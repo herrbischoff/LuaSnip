@@ -9,6 +9,8 @@ local tree_watcher = require("luasnip.loaders.fs_watchers").tree
 local Data = require("luasnip.loaders.data")
 local session = require("luasnip.session")
 local snippetcache = require("luasnip.loaders.snippet_cache")
+local refresh_notify = require("luasnip.loaders.enqueueable_operations").refresh_notify
+local clean_invalidated = require("luasnip.loaders.enqueueable_operations").clean_invalidated
 
 local log = require("luasnip.util.log").new("snipmate-loader")
 
@@ -322,7 +324,7 @@ function Collection:load_file(path, ft, skip_load_mode)
 		end
 	end
 
-	ls.refresh_notify(ft)
+	refresh_notify(ft)
 end
 
 function Collection:do_lazy_load(lazy_ft)
@@ -342,7 +344,7 @@ function Collection:reload(path)
 	end
 
 	-- clean snippets if enough were removed.
-	ls.clean_invalidated({ inv_limit = 100 })
+	clean_invalidated()
 end
 
 local M = {}
