@@ -59,7 +59,7 @@ function M.edit_snippet_files(opts)
 
 			-- concat files from all loaders for the selected filetype ft.
 			for cache_name, ft_file_set in pairs({
-				vscode_packages = {},
+				vscode_packages = loader_data.vscode_ft_paths[ft],
 				vscode_standalone = {},
 				snipmate = loader_data.snipmate_ft_paths[ft],
 				lua = loader_data.lua_ft_paths[ft],
@@ -127,22 +127,6 @@ end
 
 function M.cleanup()
 	Cache.cleanup()
-end
-
-vim.api.nvim_create_autocmd("BufWritePost", {
-	group = vim.api.nvim_create_augroup("luasnip_watch_reload", {}),
-	callback = function()
-		require("luasnip.loaders").reload_file(vim.fn.expand("<afile>"))
-	end,
-})
-function M.reload_file(filename)
-	filename = Path.normalize(filename)
-	if not filename then
-		-- file does not exist.
-		-- log here, maybe.
-		return
-	end
-	require("luasnip.loaders.from_vscode")._reload_file(filename)
 end
 
 function M.load_lazy_loaded(bufnr)
