@@ -151,7 +151,11 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		--- | '"collection"' File only belongs to the collection
 		--- | '"load"' File should be loaded
 
-		--- Determine whether a file should be loaded, belongs to the collection, or doesn't.
+		--- Determine whether a file should be loaded, belongs to the
+		--- collection, or doesn't.
+		--- This distinction is important because we need to know about all
+		--- files to correctly resolve `extend <someft>`, but only want to load
+		--- the filetypes allowed by in/exclude.
 		--- @param path string
 		---@return LuaSnip.Loaders.Snipmate.FileCategory?
 		categorize_file = function(path)
@@ -167,6 +171,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 			end
 			return nil
 		end,
+
 		add_opts = add_opts,
 		lazy = lazy,
 		-- store ft -> set of files that should be lazy-loaded.
@@ -201,7 +206,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 				o:register_file(path, file_ft)
 				if file_category == "load" then
 					-- actually load if allowed by in/exclude.
-					o:add_file(path, file_ft, "RespectCollection")
+					o:add_file(path, file_ft, "RespectCollectionLaziness")
 				end
 			end
 		end,
@@ -232,7 +237,7 @@ end
 
 --- @alias LuaSnip.Loaders.Snipmate.LazyMode
 --- | '"Immediate"' Load file immediately, independent of collection.lazy.
---- | '"RespectCollection"' Behave according to collection.lazy.
+--- | '"RespectCollectionLaziness"' Behave according to collection.lazy.
 
 --- Register a file-filetype-association with the collection.
 --- @param path string Path to a file that belongs to this collection.
@@ -245,7 +250,7 @@ function Collection:add_file(path, add_ft, mode)
 	-- register known file.
 	Data.snipmate_ft_paths[add_ft][path] = true
 
-	if mode == "RespectCollection" and self.lazy then
+	if mode == "RespectCollectionLaziness" and self.lazy then
 		if not session.loaded_fts[add_ft] then
 			log.info("Registering lazy-load-snippets for ft `%s` from file `%s`", add_ft, path)
 
@@ -271,6 +276,11 @@ end
 --- | '"SkipIfLoaded"' Skip the load if the file has been loaded already.
 
 -- loads the fts that extend load_ft as well.
+-- skip_load_mode allows this code to both prevent unnecessary loads (which
+-- could be caused if some file is added to the same filetype more than once),
+-- while still handling reload (where the files has to be loaded again for
+-- every filetype, even if it already is loaded (since it may have different
+-- snippets))
 function Collection:load_file(path, ft, skip_load_mode)
 	if skip_load_mode == "SkipIfLoaded" and self.loaded_path_fts[path][ft] then
 		return
@@ -286,15 +296,17 @@ function Collection:load_file(path, ft, skip_load_mode)
 	-- subsequent code, which would trigger and endless loop.
 	self.loaded_path_fts[path][ft] = true
 
-	-- this may already be set, but setting again here ensures that all
-	-- loaded files are accessible.
-	-- (for example, file-ft-combinations loaded as a dependency from another
-	-- file may not be set already).
+	-- this may already be set, but setting again here ensures that a file is
+	-- certainly associated with each filetype it's loaded for. (for example,
+	-- file-ft-combinations loaded as a dependency from another file may not be
+	-- set already).
 	Data.snipmate_ft_paths[ft][path] = true
 
+	-- snippets may already be loaded -> get them from cache.
 	local data = Data.snipmate_cache:fetch(path)
 	local snippets = data.snippets
 	local autosnippets = data.autosnippets
+	-- data.misc is user-input, clean it here.
 	local extended_fts = util.deduplicate(data.misc)
 
 	-- ignored if it already exists.
@@ -306,7 +318,8 @@ function Collection:load_file(path, ft, skip_load_mode)
 		-- ignored if it already exists.
 		self.ft_extensions:set_vertex(extended_ft)
 		-- snippets for extended_ft should also be loaded if ft is loaded
-		-- label edge with path, so they can be removed easily on reloading.
+		-- label edge with path, so all edges from this file can be updated on
+		-- reload.
 		self.ft_extensions:set_edge(extended_ft, ft, path)
 	end
 
@@ -319,6 +332,10 @@ function Collection:load_file(path, ft, skip_load_mode)
 		for file, _ in pairs(self.collection_files_by_ft[extended_ft]) do
 			for _, file_ft in ipairs(self.ft_extensions:connected_component(extended_ft, "Forward")) do
 				-- skips load if the file is already loaded for the given filetype.
+				-- One bad side-effect of this current implementation is that
+				-- the edges in the graph will be reset/set multiple times,
+				-- until they are retained in the last load_file-call to the
+				-- last filetype.
 				self:load_file(file, file_ft, "SkipIfLoaded")
 			end
 		end

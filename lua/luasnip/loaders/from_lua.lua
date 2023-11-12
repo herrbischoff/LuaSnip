@@ -277,14 +277,6 @@ function Collection:load_file(path, ft)
 			change = function(_)
 				local depending_files = self.file_dependencies:connected_component(file_dependency, "Forward")
 				for _, file in ipairs(depending_files) do
-					-- We obviously don't want to load snippet-files that are
-					-- not loaded already.
-					-- However, since we only have dependency-information for
-					-- files that were loaded, this is given if they are one of
-					-- the depending_files and a snippet-file.
-					-- The latter has to be checked here, otherwise we may load
-					-- a utility-file thinking it provides snippets.
-
 					-- Prevent loading one of the utility-files as a snippet-file.
 					-- This will not reject any snippet-file in
 					-- depending_files. This is because since they are in

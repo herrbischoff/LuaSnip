@@ -129,6 +129,8 @@ local function get_file_snippets(file)
 	}
 end
 
+-- has to be set in separate module to allow different module-path-separators
+-- in `require`.
 Data.vscode_cache = require("luasnip.loaders.snippet_cache").new(get_file_snippets)
 
 --- Parse package.json(c), determine all files that contribute snippets, and
@@ -200,6 +202,7 @@ local function get_snippet_files(manifest)
 	return ft_file_set
 end
 
+-- Responsible for watching a single json-snippet-file.
 local SnippetfileWatcher = {}
 local SnippetfileWatcher_mt = {__index = SnippetfileWatcher}
 
@@ -207,6 +210,8 @@ function SnippetfileWatcher.new(path, initial_ft, fs_event_providers, lazy, load
 	local o = setmetatable({
 		path = path,
 		load_cb = load_cb,
+		-- track which filetypes this file has been loaded for, so we can
+		-- reload for all of them.
 		loaded_fts = {[initial_ft] = true}
 	}, SnippetfileWatcher_mt)
 
@@ -238,6 +243,7 @@ function SnippetfileWatcher.new(path, initial_ft, fs_event_providers, lazy, load
 	return o
 end
 
+-- called by collection.
 function SnippetfileWatcher:add_ft(ft)
 	if self.loaded_fts[ft] then
 		-- already loaded.
@@ -262,7 +268,6 @@ function Collection.new(manifest_path, lazy, include_ft, exclude_ft, add_opts, l
 		lazy_files = autotable(2, {warn = false}),
 		fs_event_providers = fs_event_providers,
 
-		added_path_fts = autotable(2, {warn = false}),
 		-- store path-watchers (so we don't register more than one for one
 		-- path).
 		path_watchers = {},
@@ -343,6 +348,7 @@ function Collection:load_file(path, ft)
 		end
 		self.path_watchers[path] = watcher_or_err
 	else
+		-- make new filetype known to existing watcher.
 		self.path_watchers[path]:add_ft(ft)
 	end
 end
@@ -400,7 +406,6 @@ local function get_manifests(paths)
 	return manifest_paths
 end
 
---- Generate list
 --- Generate list of paths to manifests that may not yet exist, from list of
 --- directories (which also may not yet exist).
 --- One peculiarity: This will generate two paths for each directory, since we
