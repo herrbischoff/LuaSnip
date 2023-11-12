@@ -9,7 +9,9 @@ local M = {}
 
 -- used by both watchers.
 local callback_mt = {
-	__index = function() return util.nop end
+	__index = function()
+		return util.nop
+	end,
 }
 
 --- @alias LuaSnip.FSWatcher.FSEventProviders
@@ -47,7 +49,8 @@ local callback_mt = {
 local function get_opts(opts)
 	opts = opts or {}
 	local lazy = vim.F.if_nil(opts.lazy, false)
-	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, libuv = false})
+	local fs_event_providers =
+		vim.F.if_nil(opts.fs_event_providers, { autocmd = true, libuv = false })
 
 	return lazy, fs_event_providers
 end
@@ -64,10 +67,17 @@ vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 		local realpath = Path.normalize(args.file)
 		if not realpath then
 			-- if nil, the path does not exist for some reason.
-			log.info("Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.", args.file)
+			log.info(
+				"Registered BufWritePost with <afile> %s, but realpath does not exist. Aborting fs-watcher-notification.",
+				args.file
+			)
 			return
 		end
-		log.debug("Received update for file %s, using realpath %s.", args.file, realpath)
+		log.debug(
+			"Received update for file %s, using realpath %s.",
+			args.file,
+			realpath
+		)
 
 		for _, watcher in ipairs(M.active_watchers) do
 			watcher:BufWritePost_callback(realpath)
@@ -97,7 +107,7 @@ vim.api.nvim_create_autocmd({ "BufWritePost" }, {
 --- @field root_realpath string? Set as soon as the watcher is started.
 local TreeWatcher = {}
 local TreeWatcher_mt = {
-	__index = TreeWatcher
+	__index = TreeWatcher,
 }
 function TreeWatcher:stop_recursive()
 	for _, child_watcher in ipairs(self.dir_watchers) do
@@ -120,39 +130,46 @@ function TreeWatcher:fs_event_callback(err, relpath, events)
 		return
 	end
 	vim.schedule_wrap(function()
-	log_tree.debug("raw: self.root: %s; err: %s; relpath: %s; change: %s; rename: %s", self.root, err, relpath, events.change, events.rename)
-	local full_path = Path.join(self.root, relpath)
-	local path_stat = uv.fs_stat(full_path)
+		log_tree.debug(
+			"raw: self.root: %s; err: %s; relpath: %s; change: %s; rename: %s",
+			self.root,
+			err,
+			relpath,
+			events.change,
+			events.rename
+		)
+		local full_path = Path.join(self.root, relpath)
+		local path_stat = uv.fs_stat(full_path)
 
-	-- try to figure out what happened in the directory.
-	if events.rename then
-		if not uv.fs_stat(self.root) then
-			self:remove_root()
-			return
-		end
-		if not path_stat then
-			self:remove_child(relpath, full_path)
-			return
-		end
+		-- try to figure out what happened in the directory.
+		if events.rename then
+			if not uv.fs_stat(self.root) then
+				self:remove_root()
+				return
+			end
+			if not path_stat then
+				self:remove_child(relpath, full_path)
+				return
+			end
 
-		local f_type
-		-- if there is a link to a directory, we are notified on changes!!
-		if path_stat.type == "link" then
-			f_type = uv.fs_stat(uv.fs_realpath(full_path))
-		else
-			f_type = path_stat.type
-		end
+			local f_type
+			-- if there is a link to a directory, we are notified on changes!!
+			if path_stat.type == "link" then
+				f_type = uv.fs_stat(uv.fs_realpath(full_path))
+			else
+				f_type = path_stat.type
+			end
 
-		if f_type == "file" then
-			self:new_file(relpath, full_path)
-			return
-		elseif f_type == "directory" then
-			self:new_dir(relpath, full_path)
-			return
+			if f_type == "file" then
+				self:new_file(relpath, full_path)
+				return
+			elseif f_type == "directory" then
+				self:new_dir(relpath, full_path)
+				return
+			end
+		elseif events.change then
+			self:change_child(relpath, full_path)
 		end
-	elseif events.change then
-		self:change_child(relpath, full_path)
-	end
 	end)()
 end
 
@@ -171,7 +188,8 @@ function TreeWatcher:BufWritePost_callback(realpath)
 	end
 
 	-- `#self.realpath_root+2`: remove root and path-separator.
-	local root_relative_components = Path.components(realpath:sub(#self.realpath_root+2))
+	local root_relative_components =
+		Path.components(realpath:sub(#self.realpath_root + 2))
 	local rel = root_relative_components[1]
 	if #root_relative_components == 1 then
 		-- wrote file.
@@ -209,14 +227,25 @@ function TreeWatcher:start()
 	if self.fs_event_providers.libuv then
 		-- does not work on nfs-drive, at least if it's edited from another
 		-- machine.
-		local success, err = self.fs_event:start(self.root, {}, function(err, relpath, events)
-			self:fs_event_callback(err, relpath, events)
-		end)
+		local success, err = self.fs_event:start(
+			self.root,
+			{},
+			function(err, relpath, events)
+				self:fs_event_callback(err, relpath, events)
+			end
+		)
 
 		if not success then
-			log_tree.error("Could not start libuv-monitor for path %s due to error %s", self.path, err)
+			log_tree.error(
+				"Could not start libuv-monitor for path %s due to error %s",
+				self.path,
+				err
+			)
 		else
-			log_tree.info("Monitoring root-directory %s with libuv-monitor.", self.root)
+			log_tree.info(
+				"Monitoring root-directory %s with libuv-monitor.",
+				self.root
+			)
 		end
 	end
 
@@ -225,9 +254,15 @@ function TreeWatcher:start()
 	if self.realpath_root then
 		-- receive notifications on BufWritePost.
 		table.insert(M.active_watchers, self)
-		log_tree.info("Monitoring root-directory %s with autocmd-monitor.", self.root)
+		log_tree.info(
+			"Monitoring root-directory %s with autocmd-monitor.",
+			self.root
+		)
 	else
-		log_tree.error("Could not resolve realpath for root %s, not enabling autocmd-monitor", self.root)
+		log_tree.error(
+			"Could not resolve realpath for root %s, not enabling autocmd-monitor",
+			self.root
+		)
 	end
 
 	-- do initial scan after starting the watcher.
@@ -249,11 +284,11 @@ function TreeWatcher:start()
 	-- the watch-event, but that seems okay for our purposes)
 	local files, dirs = Path.scandir(self.root)
 	for _, file in ipairs(files) do
-		local relpath = file:sub(#self.root+2)
+		local relpath = file:sub(#self.root + 2)
 		self:new_file(relpath, file)
 	end
 	for _, dir in ipairs(dirs) do
-		local relpath = dir:sub(#self.root+2)
+		local relpath = dir:sub(#self.root + 2)
 		self:new_dir(relpath, dir)
 	end
 end
@@ -280,7 +315,7 @@ function TreeWatcher:new_dir(rel, full)
 	-- first do callback for this directory, then look into (and potentially do
 	-- callbacks for) children.
 	self.callbacks.new_dir(full)
-	self.dir_watchers[rel] = M.tree(full, self.depth-1, self.callbacks)
+	self.dir_watchers[rel] = M.tree(full, self.depth - 1, self.callbacks)
 end
 
 function TreeWatcher:change_file(rel, full)
@@ -369,7 +404,7 @@ function M.tree(root, depth, callbacks, opts)
 		stopped = true,
 		callbacks = callbacks,
 		depth = depth,
-		fs_event_providers = fs_event_providers
+		fs_event_providers = fs_event_providers,
 	}, TreeWatcher_mt)
 
 	-- if the path does not yet exist, set watcher up s.t. it will start
@@ -382,7 +417,11 @@ function M.tree(root, depth, callbacks, opts)
 			error(("Could not find parent-path for %s"):format(root))
 		end
 
-		log_tree.info("Path %s does not exist yet, watching %s for creation.", root, parent_path)
+		log_tree.info(
+			"Path %s does not exist yet, watching %s for creation.",
+			root,
+			parent_path
+		)
 
 		local parent_watcher
 		parent_watcher = M.tree(parent_path, 1, {
@@ -393,8 +432,8 @@ function M.tree(root, depth, callbacks, opts)
 					parent_watcher:stop()
 				end
 			end,
-		-- use same providers.
-		}, { lazy = true, fs_event_providers = fs_event_providers} )
+			-- use same providers.
+		}, { lazy = true, fs_event_providers = fs_event_providers })
 	else
 		o:start()
 	end
@@ -413,14 +452,17 @@ end
 local PathWatcher = {}
 
 local PathWatcher_mt = {
-	__index = PathWatcher
+	__index = PathWatcher,
 }
 
 function PathWatcher:change(full)
 	log_path.info("detected change at path %s", full)
 	if self.removed then
 		-- this is certainly unexpected.
-		log_path.warn("PathWatcher at %s detected change, but path does not exist logically. Not triggering callback.", full)
+		log_path.warn(
+			"PathWatcher at %s detected change, but path does not exist logically. Not triggering callback.",
+			full
+		)
 	else
 		self.callbacks.change(self.path)
 	end
@@ -458,7 +500,14 @@ function PathWatcher:fs_event_callback(err, relpath, events)
 	end
 
 	vim.schedule_wrap(function()
-		log_path.debug("raw: path: %s; err: %s; relpath: %s; change: %s; rename: %s", self.path, err, relpath, events.change, events.rename)
+		log_path.debug(
+			"raw: path: %s; err: %s; relpath: %s; change: %s; rename: %s",
+			self.path,
+			err,
+			relpath,
+			events.change,
+			events.rename
+		)
 
 		if events.rename then
 			if not uv.fs_stat(self.path) then
@@ -485,12 +534,20 @@ function PathWatcher:start()
 	if self.fs_event_providers.libuv then
 		-- does not work on nfs-drive, at least if it's edited from another
 		-- machine.
-		local success, err = self.fs_event:start(self.path, {}, function(err, relpath, events)
-			self:fs_event_callback(err, relpath, events)
-		end)
+		local success, err = self.fs_event:start(
+			self.path,
+			{},
+			function(err, relpath, events)
+				self:fs_event_callback(err, relpath, events)
+			end
+		)
 
 		if not success then
-			log_path.error("Could not start libuv-monitor for file %s due to error %s", self.path, err)
+			log_path.error(
+				"Could not start libuv-monitor for file %s due to error %s",
+				self.path,
+				err
+			)
 		else
 			log_path.info("Monitoring file %s with libuv-monitor.", self.path)
 		end
@@ -506,7 +563,10 @@ function PathWatcher:start()
 			table.insert(M.active_watchers, self)
 			log_path.info("Monitoring file %s with autocmd-monitor.", self.path)
 		else
-			log_path.error("Could not resolve realpath for file %s, not enabling BufWritePost-monitor", self.path)
+			log_path.error(
+				"Could not resolve realpath for file %s, not enabling BufWritePost-monitor",
+				self.path
+			)
 		end
 	end
 
@@ -548,7 +608,7 @@ function M.path(path, callbacks, opts)
 		-- manually started, where stopped will be reset.
 		stopped = true,
 		callbacks = callbacks,
-		fs_event_providers = fs_event_providers
+		fs_event_providers = fs_event_providers,
 	}, PathWatcher_mt)
 
 	-- if the path does not yet exist, set watcher up s.t. it will start
@@ -561,7 +621,11 @@ function M.path(path, callbacks, opts)
 			error(("Could not find parent-path for %s"):format(path))
 		end
 
-		log_path.info("Path %s does not exist yet, watching %s for creation.", path, parent_path)
+		log_path.info(
+			"Path %s does not exist yet, watching %s for creation.",
+			path,
+			parent_path
+		)
 
 		local parent_watcher
 		parent_watcher = M.tree(parent_path, 1, {
@@ -574,7 +638,7 @@ function M.path(path, callbacks, opts)
 					parent_watcher:stop()
 				end
 			end,
-		}, {lazy = true, fs_event_providers = fs_event_providers} )
+		}, { lazy = true, fs_event_providers = fs_event_providers })
 	else
 		o:start()
 	end

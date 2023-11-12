@@ -421,35 +421,25 @@ describe("loaders:", function()
 		"<Esc>2jwcereplaces"
 	)
 
-	reload_test(
-		"vscode-reload: load symlinked and edit real",
-		function()
-			exec_lua(
-				string.format(
-					[[require("luasnip.loaders.from_vscode").lazy_load({paths="%s"})]],
-					os.getenv("LUASNIP_SOURCE")
-						.. "/tests/symlinked_data/vscode-snippets"
-				)
+	reload_test("vscode-reload: load symlinked and edit real", function()
+		exec_lua(
+			string.format(
+				[[require("luasnip.loaders.from_vscode").lazy_load({paths="%s"})]],
+				os.getenv("LUASNIP_SOURCE")
+					.. "/tests/symlinked_data/vscode-snippets"
 			)
-		end,
-		"/tests/data/vscode-snippets/snippets/all.json",
-		"<Esc>4jwlcereplaces"
-	)
+		)
+	end, "/tests/data/vscode-snippets/snippets/all.json", "<Esc>4jwlcereplaces")
 
-	reload_test(
-		"lua-reload: load symlinked and edit real",
-		function()
-			exec_lua(
-				string.format(
-					[[require("luasnip.loaders.from_lua").lazy_load({paths="%s"})]],
-					os.getenv("LUASNIP_SOURCE")
-						.. "/tests/symlinked_data/lua-snippets/luasnippets"
-				)
+	reload_test("lua-reload: load symlinked and edit real", function()
+		exec_lua(
+			string.format(
+				[[require("luasnip.loaders.from_lua").lazy_load({paths="%s"})]],
+				os.getenv("LUASNIP_SOURCE")
+					.. "/tests/symlinked_data/lua-snippets/luasnippets"
 			)
-		end,
-		"/tests/data/lua-snippets/luasnippets/all.lua",
-		"<Esc>jfecereplaces"
-	)
+		)
+	end, "/tests/data/lua-snippets/luasnippets/all.lua", "<Esc>jfecereplaces")
 
 	reload_test(
 		"snipmate-reload: load real and edit symlinked",

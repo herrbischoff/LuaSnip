@@ -24,7 +24,7 @@ local clean_enqueued = false
 function M.clean_invalidated()
 	if not clean_enqueued then
 		vim.schedule(function()
-			require("luasnip").clean_invalidated({inv_limit = 100})
+			require("luasnip").clean_invalidated({ inv_limit = 100 })
 		end)
 	end
 	clean_enqueued = true

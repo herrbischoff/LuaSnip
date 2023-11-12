@@ -9,8 +9,10 @@ local tree_watcher = require("luasnip.loaders.fs_watchers").tree
 local Data = require("luasnip.loaders.data")
 local session = require("luasnip.session")
 local snippetcache = require("luasnip.loaders.snippet_cache")
-local refresh_notify = require("luasnip.loaders.enqueueable_operations").refresh_notify
-local clean_invalidated = require("luasnip.loaders.enqueueable_operations").clean_invalidated
+local refresh_notify =
+	require("luasnip.loaders.enqueueable_operations").refresh_notify
+local clean_invalidated =
+	require("luasnip.loaders.enqueueable_operations").clean_invalidated
 
 local log = require("luasnip.util.log").new("snipmate-loader")
 
@@ -25,7 +27,7 @@ local function load_snipmate(filename)
 		return {
 			snippets = {},
 			autosnippets = {},
-			misc = {}
+			misc = {},
 		}
 	end
 
@@ -124,7 +126,7 @@ local function load_snipmate(filename)
 	return {
 		snippets = snippets.snippet,
 		autosnippets = snippets.autosnippet,
-		misc = extends
+		misc = extends,
 	}
 end
 
@@ -135,14 +137,22 @@ Data.snipmate_cache = snippetcache.new(load_snipmate)
 --- some root, and registers new files.
 local Collection = {}
 local Collection_mt = {
-	__index = Collection
+	__index = Collection,
 }
 
 local function snipmate_package_file_filter(fname)
 	return fname:match("%.snippets$")
 end
 
-function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watcher, fs_event_providers)
+function Collection.new(
+	root,
+	lazy,
+	include_ft,
+	exclude_ft,
+	add_opts,
+	lazy_watcher,
+	fs_event_providers
+)
 	local ft_filter = loader_util.ft_filter(include_ft, exclude_ft)
 	local o = setmetatable({
 		root = root,
@@ -160,7 +170,11 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		---@return LuaSnip.Loaders.Snipmate.FileCategory?
 		categorize_file = function(path)
 			if not path:sub(1, #root) == root then
-				log.warn("Tried to filter file `%s`, which is not inside the root `%s`.", path, root)
+				log.warn(
+					"Tried to filter file `%s`, which is not inside the root `%s`.",
+					path,
+					root
+				)
 				return nil
 			end
 			if snipmate_package_file_filter(path) then
@@ -175,9 +189,9 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		add_opts = add_opts,
 		lazy = lazy,
 		-- store ft -> set of files that should be lazy-loaded.
-		lazy_files = autotable(2, {warn = false}),
+		lazy_files = autotable(2, { warn = false }),
 		-- store for each path the set of filetypes it has been loaded with.
-		loaded_path_fts = autotable(2, {warn = false}),
+		loaded_path_fts = autotable(2, { warn = false }),
 		-- model filetype-extensions (`extends <someft>` in `ft.snippets`).
 		-- Better than a flat table with t[ft] = {someft=true, somotherft=true}
 		-- since transitive dependencies are easier to understand/query.
@@ -190,7 +204,7 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 		-- store all files in the collection, by their filetype.
 		-- This information is necessary to handle `extends` even for files
 		-- that are not actually loaded (due to in/exclude).
-		collection_files_by_ft = autotable(2, {warn = false}),
+		collection_files_by_ft = autotable(2, { warn = false }),
 	}, Collection_mt)
 
 	-- only register files up to a depth of 2.
@@ -214,8 +228,8 @@ function Collection.new(root, lazy, include_ft, exclude_ft, add_opts, lazy_watch
 			vim.schedule_wrap(function()
 				o:reload(path)
 			end)()
-		end
-	}, {lazy = lazy_watcher, fs_event_providers = fs_event_providers})
+		end,
+	}, { lazy = lazy_watcher, fs_event_providers = fs_event_providers })
 
 	if not watcher_ok then
 		error(("Could not create watcher: %s"):format(err))
@@ -252,7 +266,11 @@ function Collection:add_file(path, add_ft, mode)
 
 	if mode == "RespectCollectionLaziness" and self.lazy then
 		if not session.loaded_fts[add_ft] then
-			log.info("Registering lazy-load-snippets for ft `%s` from file `%s`", add_ft, path)
+			log.info(
+				"Registering lazy-load-snippets for ft `%s` from file `%s`",
+				add_ft,
+				path
+			)
 
 			-- only register to load later.
 			self.lazy_files[add_ft][path] = true
@@ -266,7 +284,9 @@ function Collection:add_file(path, add_ft, mode)
 	end
 
 	-- load file for add_ft and all filetypes that inherit from it.
-	for _, ft in ipairs(self.ft_extensions:connected_component(add_ft, "Forward")) do
+	for _, ft in
+		ipairs(self.ft_extensions:connected_component(add_ft, "Forward"))
+	do
 		self:load_file(path, ft, "SkipIfLoaded")
 	end
 end
@@ -286,11 +306,7 @@ function Collection:load_file(path, ft, skip_load_mode)
 		return
 	end
 
-	log.info(
-		"Adding snippets for filetype `%s` from file `%s`",
-		ft,
-		path
-	)
+	log.info("Adding snippets for filetype `%s` from file `%s`", ft, path)
 
 	-- Set here to skip loads triggered for the same path-file-combination in
 	-- subsequent code, which would trigger and endless loop.
@@ -323,14 +339,27 @@ function Collection:load_file(path, ft, skip_load_mode)
 		self.ft_extensions:set_edge(extended_ft, ft, path)
 	end
 
-	loader_util.add_file_snippets(ft, path, snippets, autosnippets, self.add_opts)
+	loader_util.add_file_snippets(
+		ft,
+		path,
+		snippets,
+		autosnippets,
+		self.add_opts
+	)
 
 	-- get all filetypes this one extends (directly or transitively), and load
 	-- their files.
 	local load_fts = self.ft_extensions:connected_component(ft, "Backward")
 	for _, extended_ft in ipairs(load_fts) do
 		for file, _ in pairs(self.collection_files_by_ft[extended_ft]) do
-			for _, file_ft in ipairs(self.ft_extensions:connected_component(extended_ft, "Forward")) do
+			for _, file_ft in
+				ipairs(
+					self.ft_extensions:connected_component(
+						extended_ft,
+						"Forward"
+					)
+				)
+			do
 				-- skips load if the file is already loaded for the given filetype.
 				-- One bad side-effect of this current implementation is that
 				-- the edges in the graph will be reset/set multiple times,
@@ -346,7 +375,9 @@ end
 
 function Collection:do_lazy_load(lazy_ft)
 	for file, _ in pairs(self.lazy_files[lazy_ft]) do
-		for _, ft in ipairs(self.ft_extensions:connected_component(lazy_ft, "Forward")) do
+		for _, ft in
+			ipairs(self.ft_extensions:connected_component(lazy_ft, "Forward"))
+		do
 			-- skips load if the file is already loaded for the given filetype.
 			self:load_file(file, ft, "SkipIfLoaded")
 		end
@@ -385,20 +416,45 @@ local function _load(lazy, opts)
 	local include = opts.include
 	local exclude = opts.exclude
 	local lazy_paths = opts.lazy_paths or {}
-	local fs_event_providers = vim.F.if_nil(opts.fs_event_providers, {autocmd = true, libuv = false})
+	local fs_event_providers =
+		vim.F.if_nil(opts.fs_event_providers, { autocmd = true, libuv = false })
 
 	local collection_roots = loader_util.resolve_root_paths(paths, "snippets")
 	local lazy_roots = loader_util.resolve_lazy_root_paths(lazy_paths)
 
-	log.info("Found roots `%s` for paths `%s`.", vim.inspect(collection_roots), vim.inspect(paths))
-	log.info("Determined roots `%s` for lazy_paths `%s`.", vim.inspect(lazy_roots), vim.inspect(lazy_paths))
+	log.info(
+		"Found roots `%s` for paths `%s`.",
+		vim.inspect(collection_roots),
+		vim.inspect(paths)
+	)
+	log.info(
+		"Determined roots `%s` for lazy_paths `%s`.",
+		vim.inspect(lazy_roots),
+		vim.inspect(lazy_paths)
+	)
 
-	for paths_lazy, roots in pairs({[true] = lazy_roots, [false] = collection_roots}) do
+	for paths_lazy, roots in pairs({
+		[true] = lazy_roots,
+		[false] = collection_roots,
+	}) do
 		for _, collection_root in ipairs(roots) do
-			local ok, coll_or_err = pcall(Collection.new, collection_root, lazy, include, exclude, add_opts, paths_lazy, fs_event_providers)
+			local ok, coll_or_err = pcall(
+				Collection.new,
+				collection_root,
+				lazy,
+				include,
+				exclude,
+				add_opts,
+				paths_lazy,
+				fs_event_providers
+			)
 
 			if not ok then
-				log.error("Could not create collection at %s: %s", collection_root, coll_or_err)
+				log.error(
+					"Could not create collection at %s: %s",
+					collection_root,
+					coll_or_err
+				)
 			else
 				table.insert(Data.snipmate_collections, coll_or_err)
 			end
@@ -417,7 +473,9 @@ end
 function M.lazy_load(opts)
 	_load(true, opts)
 	-- load for current buffer on startup.
-	for _, ft in ipairs(loader_util.get_load_fts(vim.api.nvim_get_current_buf())) do
+	for _, ft in
+		ipairs(loader_util.get_load_fts(vim.api.nvim_get_current_buf()))
+	do
 		M._load_lazy_loaded_ft(ft)
 	end
 end
