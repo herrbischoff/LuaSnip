@@ -218,7 +218,9 @@ function LabeledDigraph:set_edge(lv1, lv2, edge_label)
 	-- determine before setting the lv1-lv2-edge.
 	local other_edge_exists = next(self.verts_to_label[lv1][lv2], nil) ~= nil
 
+	-- store both associations; 
 	self.verts_to_label[lv1][lv2][edge_label] = true
+	self.label_to_verts[edge_label][lv1][lv2] = true
 
 	if other_edge_exists then
 		-- there already exists an entry for this edge, no need to add it to
@@ -244,6 +246,8 @@ function LabeledDigraph:clear_edges(label)
 	for lv1, lv2 in pairs(self.label_to_verts[label]) do
 		self:clear_edge(lv1, lv2, label)
 	end
+	-- set to nil, not {}, so autotable can work its magic.
+	self.label_to_verts[label] = nil
 end
 
 function LabeledDigraph:connected_component(lv, edge_direction)
